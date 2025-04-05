@@ -18,14 +18,29 @@ try:
             layout = self.layout
             scene = context.scene
 
-            layout.operator("robot_viz.visualize_robot", text="Visualize Robot")
-
+            # URDF filepath and render filepath
             layout.prop(scene, "formamotus_urdf_filepath")
             layout.prop(scene, "formamotus_render_filepath")
+
+            # Joint color settings
+            layout.label(text="Joint Colors")
             layout.prop(scene, "formamotus_revolute_color")
             layout.prop(scene, "formamotus_prismatic_color")
             layout.prop(scene, "formamotus_continuous_color")
             layout.prop(scene, "formamotus_default_color")
+
+            # Visualize Robot button
+            layout.operator(robot_visualizer.RobotVisualizerOperator.bl_idname, text="Visualize Robot")
+
+            layout.label(text=f"Robot Model: {robot_visualizer._robot_model}")
+            # Joint angle sliders
+            if robot_visualizer._robot_model:
+                for joint_name in robot_visualizer._robot_model.joint_names:
+                    joint = robot_visualizer._robot_model.__dict__.get(joint_name)
+                    if joint and joint.type != 'fixed':
+                        prop_name = f"formamotus_joint_angle_{joint_name.replace(' ', '_').replace('/', '_')}"
+                        if hasattr(scene, prop_name):
+                           layout.prop(scene, prop_name, slider=True)
 
 except ImportError:
     pass
@@ -148,9 +163,8 @@ def register():
             return results
 
         print("Importing FormaMotus")
-        robot_visualizer.register_custom_properties()
+        robot_visualizer.register()
         bpy.utils.register_class(FormaMotusPanel)
-        bpy.utils.register_class(robot_visualizer.RobotVisualizerOperator)
 
     except ImportError:
         def draw(self, context):
@@ -165,8 +179,7 @@ def unregister():
     from . import utils
 
     bpy.utils.unregister_class(FormaMotusPanel)
-    bpy.utils.unregister_class(robot_visualizer.RobotVisualizerOperator)
-    robot_visualizer.unregister_custom_properties()
+    robot_visualizer.unregister()
 
 if "blender" not in sys.executable.lower() and not BPY_AVAILABLE:
     try:

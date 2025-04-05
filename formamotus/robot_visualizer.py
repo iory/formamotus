@@ -3,14 +3,90 @@ import numpy as np
 from skrobot.model import Cylinder
 from skrobot.model import Link
 from skrobot.model import RobotModel
-from skrobot.models import PR2
 from skrobot.data import pr2_urdfpath
 from skrobot.utils.urdf import no_mesh_load_mode
+from mathutils import Vector, Quaternion
+import re  # Added for cleaning property names
 
 from formamotus.utils.rendering_utils import enable_freestyle
 
 
+_robot_model = None
+_cylinder_objects = {}
+_thin_cylinder_objects = []
+
+def set_robot_model(model):
+    global _robot_model
+    _robot_model = model
+
+def get_robot_model():
+    return _robot_model
+
+
+def update_joint_position(self, context):
+    global _cylinder_objects
+    global _robot_model
+    global _thin_cylinder_objects
+    if not _cylinder_objects or not _robot_model:
+        return
+    scene = context.scene
+
+    for joint_name in _robot_model.joint_names:
+        joint = _robot_model.__dict__.get(joint_name)
+        if joint and joint.type != 'fixed':
+            prop_name = f"formamotus_joint_angle_{joint_name.replace(' ', '_').replace('/', '_')}"
+            if hasattr(scene, prop_name):
+                joint_angle = getattr(scene, prop_name)
+                joint.joint_angle(joint_angle)
+    for link, cylinder in _cylinder_objects.items():
+        # Update the position and rotation of the cylinder
+        parent_link = link.copy_worldcoords()
+        axis = link.joint.axis
+        if isinstance(axis, str):
+            axis_dict = {'x': [1, 0, 0], 'y': [0, 1, 0], 'z': [0, 0, 1]}
+            axis_vector = np.array(axis_dict.get(axis.lower(), [0, 0, 1]))
+        else:
+            axis_vector = np.array(axis)
+        default_vector = np.array([0, 0, 1])
+        rotation_axis = np.cross(default_vector, axis_vector)
+        if np.linalg.norm(rotation_axis) > 1e-6:
+            rotation_axis = rotation_axis / np.linalg.norm(rotation_axis)
+            angle = np.arccos(np.dot(default_vector, axis_vector))
+            parent_link.rotate(angle, rotation_axis)
+        cylinder.location = parent_link.worldpos()
+        cylinder.rotation_mode = 'QUATERNION'
+        cylinder.rotation_quaternion = parent_link.quaternion
+
+    # Update the position and rotation of the thin cylinders
+    for org_parent_link, link, thin_cylinder, org_length in _thin_cylinder_objects:
+        start_pos = org_parent_link.worldpos()
+        end_pos = link.worldpos()
+        direction = end_pos - start_pos
+        length = np.linalg.norm(direction)
+        thin_radius = 0.03  # Same radius as the connector cylinder
+
+        if length > 1e-6:
+            mid_pos = start_pos + direction * 0.5
+            thin_cylinder.location = mid_pos
+            thin_cylinder.scale = (1, 1, length / org_length)
+
+            # Compute the rotation axis and angle
+            z_axis = np.array([0, 0, 1])
+            rot_axis = np.cross(z_axis, direction)
+            if np.linalg.norm(rot_axis) > 1e-6:
+                rot_axis = rot_axis / np.linalg.norm(rot_axis)
+                angle = np.arccos(np.dot(z_axis, direction) / length)
+                thin_cylinder.rotation_mode = 'AXIS_ANGLE'
+                thin_cylinder.rotation_axis_angle = [angle, rot_axis[0], rot_axis[1], rot_axis[2]]
+            else:
+                thin_cylinder.rotation_mode = 'QUATERNION'
+                thin_cylinder.rotation_quaternion = [1, 0, 0, 0]
+
+    bpy.context.view_layer.update()
+
+
 def register_custom_properties():
+    """Register custom properties to the scene."""
     bpy.types.Scene.formamotus_urdf_filepath = bpy.props.StringProperty(
         name="URDF Filepath",
         description="Path to load URDF filepath",
@@ -63,6 +139,7 @@ def register_custom_properties():
 
 
 def unregister_custom_properties():
+    """Unregister custom properties from the scene."""
     del bpy.types.Scene.formamotus_urdf_filepath
     del bpy.types.Scene.formamotus_render_filepath
     del bpy.types.Scene.formamotus_revolute_color
@@ -76,7 +153,89 @@ class RobotVisualizerOperator(bpy.types.Operator):
     bl_label = "Visualize Robot Model"
     bl_options = {'REGISTER', 'UNDO'}
 
+    # Class variables to store robot model and link information
+    base_link_list = []
+    cylinder_objects = {}  # Mapping of joint name to Blender object
+
+    def clean_property_name(self, joint_name):
+        """Clean joint name to create a valid property name."""
+        # Replace spaces, slashes, and other special characters with underscores
+        cleaned_name = re.sub(r'[^a-zA-Z0-9_]', '_', joint_name)
+        return f"formamotus_joint_angle_{cleaned_name}"
+
+    def add_joint_angle_properties(self, context):
+        """Dynamically add joint angle properties based on the robot model."""
+        global _robot_model
+        if not _robot_model:
+            return
+
+        # Clear existing joint angle properties
+        existing_props = [p for p in dir(bpy.types.Scene) if p.startswith("formamotus_joint_angle_")]
+        for prop in existing_props:
+            try:
+                delattr(bpy.types.Scene, prop)
+                print(f"Deleted property: {prop}")
+            except Exception as e:
+                print(f"Failed to delete property {prop}: {e}")
+
+        # Add a property for each joint
+        for joint_name in _robot_model.joint_names:
+            joint = _robot_model.__dict__.get(joint_name)
+            if joint and joint.type != 'fixed':
+                # Get joint angle limits
+                min_angle = joint.min_angle
+                max_angle = joint.max_angle
+
+                # Ensure min_angle and max_angle are finite and valid
+                if not np.isfinite(min_angle) or min_angle is None:
+                    min_angle = -np.pi
+                if not np.isfinite(max_angle) or max_angle is None:
+                    max_angle = np.pi
+
+                # Ensure min_angle < max_angle
+                if min_angle >= max_angle:
+                    min_angle, max_angle = -np.pi, np.pi
+
+                if joint.type == 'continuous':
+                    min_angle, max_angle = -np.pi, np.pi  # Default range for continuous joints
+
+                # Log min_angle and max_angle
+                message = f"Joint: {joint_name}, min_angle: {min_angle}, max_angle: {max_angle}"
+                self.report({'INFO'}, message)
+
+                # Create a safe property name
+                prop_name = self.clean_property_name(joint_name)
+                self.report({'INFO'}, prop_name)
+
+                if hasattr(bpy.types.Scene, prop_name):
+                    print(f"{prop_name} already exists. Deleting...")
+                    self.report({'INFO'}, f"{prop_name} already exists. Deleting...")
+                    delattr(bpy.types.Scene, prop_name)
+
+                # Add custom property for joint angle
+                try:
+                    setattr(
+                        bpy.types.Scene,
+                        prop_name,
+                        bpy.props.FloatProperty(
+                            name=f"{joint_name} Angle",
+                            description=f"Angle for joint {joint_name}",
+                            default=0.0,
+                            min=min_angle,
+                            max=max_angle,
+                            update=update_joint_position,
+                        )
+                    )
+                    print(f"Added property: {prop_name} (min: {min_angle}, max: {max_angle})")
+                except Exception as e:
+                    print(f"Failed to add property {prop_name}: {e}")
+                    self.report({'INFO'}, f"Failed to add property {prop_name}: {e}")
+                    raise
+
     def execute(self, context):
+        global _cylinder_objects
+        global _robot_model
+        global _thin_cylinder_objects
         scene = context.scene
         render_filepath = scene.formamotus_render_filepath
         revolute_color = scene.formamotus_revolute_color
@@ -85,31 +244,42 @@ class RobotVisualizerOperator(bpy.types.Operator):
         default_color = scene.formamotus_default_color
         urdf_filepath = scene.formamotus_urdf_filepath
 
+        _cylinder_objects = {}
+        _thin_cylinder_objects = []
+        _robot_model = None
+
+        # Clear the scene
         bpy.ops.object.select_all(action='DESELECT')
         bpy.ops.object.select_all(action='SELECT')
         bpy.ops.object.delete()
 
+        # Set up Freestyle and background
         enable_freestyle(line_thickness=3.0, line_color=(0, 0, 0))
         bpy.context.scene.world.use_nodes = True
         bg_node = bpy.context.scene.world.node_tree.nodes["Background"]
         bg_node.inputs[0].default_value = (1, 1, 1, 1)
         bg_node.inputs[1].default_value = 1.0
 
-        robot_model = RobotModel()
+        # Load the robot model
+        _robot_model = RobotModel()
         with no_mesh_load_mode():
-            robot_model.load_urdf_file(urdf_filepath)
+            _robot_model.load_urdf_file(urdf_filepath)
 
+        # Add joint angle properties
+        self.add_joint_angle_properties(context)
+
+        # Initialize the base model
         base = RobotModel()
         base.root_link = Link()
         base.assoc(base.root_link)
 
-        base_link_list = []
-        links = [(robot_model.root_link, base.root_link, base.root_link.copy_worldcoords())]
+        self.cylinder_objects = {}
+        links = [(_robot_model.root_link, base.root_link, base.root_link.copy_worldcoords())]
         radius = 0.03
         height = 0.15
 
         while links:
-            link, parent_link, parent_coords = links.pop()
+            link, org_parent_link, parent_coords = links.pop()
             if link.joint is not None and link.joint.type != 'fixed':
                 org_parent_coords = parent_coords.copy_worldcoords()
                 parent_link = Cylinder(radius, height, vertex_colors=(0, 0, 0, 127))
@@ -145,7 +315,7 @@ class RobotVisualizerOperator(bpy.types.Operator):
                 else:
                     random_color = default_color
 
-                mat = bpy.data.materials.new(name=f"CylinderMaterial_{len(base_link_list)}")
+                mat = bpy.data.materials.new(name=f"Material_{link.name}")
                 mat.use_nodes = True
                 nodes = mat.node_tree.nodes
                 principled = nodes.get("Principled BSDF")
@@ -153,6 +323,9 @@ class RobotVisualizerOperator(bpy.types.Operator):
                 principled.inputs["Alpha"].default_value = 1.0
                 mat.blend_method = 'BLEND'
                 cylinder.data.materials.append(mat)
+
+                # Map the cylinder to the link
+                self.cylinder_objects[link] = cylinder
 
                 start_pos = org_parent_coords.worldpos()
                 end_pos = parent_coords.worldpos()
@@ -164,7 +337,7 @@ class RobotVisualizerOperator(bpy.types.Operator):
                     mid_pos = start_pos + direction * 0.5
                     bpy.ops.mesh.primitive_cylinder_add(radius=thin_radius, depth=length, location=mid_pos)
                     thin_cylinder = bpy.context.object
-                    thin_cylinder.name = f"ThinConnector_{len(base_link_list)}"
+                    thin_cylinder.name = f"Connector_{org_parent_link.name}_to_{link.name}"
 
                     z_axis = np.array([0, 0, 1])
                     rot_axis = np.cross(z_axis, direction)
@@ -177,7 +350,7 @@ class RobotVisualizerOperator(bpy.types.Operator):
                         thin_cylinder.rotation_mode = 'QUATERNION'
                         thin_cylinder.rotation_quaternion = [1, 0, 0, 0]
 
-                    thin_mat = bpy.data.materials.new(name=f"ThinCylinderMaterial_{len(base_link_list)}")
+                    thin_mat = bpy.data.materials.new(name=f"ConnectorMaterial_{org_parent_link.name}_to_{link.name}")
                     thin_mat.use_nodes = True
                     thin_nodes = thin_mat.node_tree.nodes
                     thin_principled = thin_nodes.get("Principled BSDF")
@@ -185,11 +358,17 @@ class RobotVisualizerOperator(bpy.types.Operator):
                     thin_principled.inputs["Alpha"].default_value = 1.0
                     thin_mat.blend_method = 'BLEND'
                     thin_cylinder.data.materials.append(thin_mat)
-
-                base_link_list.append(parent_link)
+                    _thin_cylinder_objects.append((
+                        org_parent_link,
+                        link,
+                        thin_cylinder,
+                        length,
+                    ))
+                org_parent_link = link
             for child_link in link.child_links:
-                links.append((child_link, parent_link, parent_coords.copy_worldcoords()))
+                links.append((child_link, org_parent_link, parent_coords.copy_worldcoords()))
 
+        # Add light and camera
         bpy.ops.object.light_add(type='POINT', location=(3, -3, 10))
         light = bpy.context.object
         light.data.energy = 1000
@@ -204,4 +383,15 @@ class RobotVisualizerOperator(bpy.types.Operator):
         bpy.ops.render.render(write_still=True)
 
         self.report({'INFO'}, "Robot visualization completed!")
+        _cylinder_objects = self.cylinder_objects
         return {'FINISHED'}
+
+
+def register():
+    register_custom_properties()
+    bpy.utils.register_class(RobotVisualizerOperator)
+
+
+def unregister():
+    unregister_custom_properties()
+    bpy.utils.unregister_class(RobotVisualizerOperator)
