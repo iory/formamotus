@@ -1,11 +1,65 @@
 import bpy
 import numpy as np
-from mathutils import Vector, Matrix
+from skrobot.model import Cylinder
+from skrobot.model import Link
+from skrobot.model import RobotModel
 from skrobot.models import PR2
-from skrobot.model import RobotModel, Link, Cylinder
-from skrobot.coordinates import Coordinates
 
 from formamotus.utils.rendering_utils import enable_freestyle
+
+
+def register_custom_properties():
+    bpy.types.Scene.formamotus_render_filepath = bpy.props.StringProperty(
+        name="Render Filepath",
+        description="Path to save the rendered image",
+        default="/tmp/render_output.png",
+        subtype='FILE_PATH'
+    )
+
+    bpy.types.Scene.formamotus_revolute_color = bpy.props.FloatVectorProperty(
+        name="Revolute Joint Color",
+        description="Color for revolute joints",
+        default=(1.0, 0.0, 0.0, 1.0),  # red
+        min=0.0, max=1.0,
+        subtype='COLOR',
+        size=4
+    )
+
+    bpy.types.Scene.formamotus_prismatic_color = bpy.props.FloatVectorProperty(
+        name="Prismatic Joint Color",
+        description="Color for prismatic joints",
+        default=(0.0, 1.0, 0.0, 1.0),  # green
+        min=0.0, max=1.0,
+        subtype='COLOR',
+        size=4
+    )
+
+    bpy.types.Scene.formamotus_continuous_color = bpy.props.FloatVectorProperty(
+        name="Continuous Joint Color",
+        description="Color for continuous joints",
+        default=(0.0, 0.0, 1.0, 1.0),  # blue
+        min=0.0, max=1.0,
+        subtype='COLOR',
+        size=4
+    )
+
+    bpy.types.Scene.formamotus_default_color = bpy.props.FloatVectorProperty(
+        name="Default Joint Color",
+        description="Color for other joint types",
+        default=(0.0, 0.0, 0.0, 1.0),  # black
+        min=0.0, max=1.0,
+        subtype='COLOR',
+        size=4
+    )
+
+
+def unregister_custom_properties():
+    del bpy.types.Scene.formamotus_render_filepath
+    del bpy.types.Scene.formamotus_revolute_color
+    del bpy.types.Scene.formamotus_prismatic_color
+    del bpy.types.Scene.formamotus_continuous_color
+    del bpy.types.Scene.formamotus_default_color
+
 
 class RobotVisualizerOperator(bpy.types.Operator):
     bl_idname = "robot_viz.visualize_robot"
@@ -13,6 +67,13 @@ class RobotVisualizerOperator(bpy.types.Operator):
     bl_options = {'REGISTER', 'UNDO'}
 
     def execute(self, context):
+        scene = context.scene
+        render_filepath = scene.formamotus_render_filepath
+        revolute_color = scene.formamotus_revolute_color
+        prismatic_color = scene.formamotus_prismatic_color
+        continuous_color = scene.formamotus_continuous_color
+        default_color = scene.formamotus_default_color
+
         bpy.ops.object.select_all(action='DESELECT')
         bpy.ops.object.select_all(action='SELECT')
         bpy.ops.object.delete()
@@ -80,13 +141,13 @@ class RobotVisualizerOperator(bpy.types.Operator):
                 cylinder.rotation_quaternion = parent_link.copy_worldcoords().quaternion
 
                 if link.joint.type == 'revolute':
-                    random_color = (1, 0, 0, 1)
+                    random_color = revolute_color
                 elif link.joint.type == 'prismatic':
-                    random_color = (0, 1, 0, 1)
+                    random_color = prismatic_color
                 elif link.joint.type == 'continuous':
-                    random_color = (0, 0, 1, 1)
+                    random_color = continuous_color
                 else:
-                    random_color = (0, 0, 0, 1)
+                    random_color = default_color
 
                 mat = bpy.data.materials.new(name=f"CylinderMaterial_{len(base_link_list)}")
                 mat.use_nodes = True
@@ -143,7 +204,7 @@ class RobotVisualizerOperator(bpy.types.Operator):
         camera = bpy.context.object
         bpy.context.scene.camera = camera
         bpy.context.scene.render.image_settings.file_format = 'PNG'
-        bpy.context.scene.render.filepath = "/tmp/render_output.png"
+        bpy.context.scene.render.filepath = render_filepath
         bpy.ops.render.render(write_still=True)
 
         self.report({'INFO'}, "Robot visualization completed!")

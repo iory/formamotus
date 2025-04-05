@@ -1,5 +1,6 @@
 import bpy
 
+
 def enable_freestyle(line_thickness=2.0, line_color=(0, 0, 0)):
     bpy.context.scene.render.use_freestyle = True
 

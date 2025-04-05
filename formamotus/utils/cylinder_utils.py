@@ -1,6 +1,7 @@
 import bpy
 from mathutils import Vector
 
+
 def cylinders_overlap(obj1, obj2):
     bbox1 = [obj1.matrix_world @ Vector(corner) for corner in obj1.bound_box]
     bbox2 = [obj2.matrix_world @ Vector(corner) for corner in obj2.bound_box]

@@ -1,6 +1,6 @@
-import sys
-import subprocess
 import os
+import subprocess
+import sys
 
 BPY_AVAILABLE = False
 try:
@@ -16,7 +16,16 @@ try:
 
         def draw(self, context):
             layout = self.layout
-            layout.operator(robot_visualizer.RobotVisualizerOperator.bl_idname, text="Visualize Robot")
+            scene = context.scene
+
+            layout.operator("robot_viz.visualize_robot", text="Visualize Robot")
+
+            layout.prop(scene, "formamotus_render_filepath")
+            layout.prop(scene, "formamotus_revolute_color")
+            layout.prop(scene, "formamotus_prismatic_color")
+            layout.prop(scene, "formamotus_continuous_color")
+            layout.prop(scene, "formamotus_default_color")
+
 except ImportError:
     pass
 
@@ -41,7 +50,6 @@ requirements = {
 }
 
 optional_requirements = {}
-
 extra_requirements = {}
 
 installation_finished_message = "All FormaMotus requirements have been installed.\nPlease restart Blender to activate the FormaMotus add-on!"
@@ -62,7 +70,7 @@ def install_requirement(package_name, upgrade_pip=False, lib=None, ensure_pip=Tr
     if lib is None:
         subprocess.check_call([sys.executable, "-m", "pip", "install", "--upgrade", package_name])
     else:
-        subprocess.check_call([sys.executable, "-m", "pip", "install", "--upgrade", f"--target={str(lib)}", package_name])
+        subprocess.check_call([sys.executable, "-m", "pip", "install", "--upgrade", f"--target={lib!s}", package_name])
 
 def check_requirements(optional=False, extra=False, force=False, upgrade_pip=False, lib=None, install=True):
     import importlib
@@ -115,16 +123,16 @@ def register():
 
         # Recursively import all submodules
         def import_submodules(package, recursive=True, verbose=False):
-            import sys
-            import pkgutil
             import importlib
+            import pkgutil
+            import sys
 
             modules = sys.modules
             if isinstance(package, str):
                 package = importlib.import_module(package)
 
             results = {}
-            for loader, name, is_pkg in pkgutil.walk_packages(package.__path__):
+            for _loader, name, is_pkg in pkgutil.walk_packages(package.__path__):
                 full_name = package.__name__ + '.' + name
                 if full_name in modules.keys():
                     if verbose:
@@ -139,6 +147,7 @@ def register():
             return results
 
         print("Importing FormaMotus")
+        robot_visualizer.register_custom_properties()
         bpy.utils.register_class(FormaMotusPanel)
         bpy.utils.register_class(robot_visualizer.RobotVisualizerOperator)
 
@@ -156,15 +165,19 @@ def unregister():
 
     bpy.utils.unregister_class(FormaMotusPanel)
     bpy.utils.unregister_class(robot_visualizer.RobotVisualizerOperator)
+    robot_visualizer.unregister_custom_properties()
 
-if not "blender" in sys.executable.lower() and not BPY_AVAILABLE:
+if "blender" not in sys.executable.lower() and not BPY_AVAILABLE:
     try:
-        from importlib.metadata import version, PackageNotFoundError
+        from importlib.metadata import PackageNotFoundError
+        from importlib.metadata import version
     except ImportError:
         try:
-            from importlib_metadata import version, PackageNotFoundError
+            from importlib_metadata import PackageNotFoundError
+            from importlib_metadata import version
         except ImportError:
-            from pkg_resources import get_distribution, DistributionNotFound as PackageNotFoundError
+            from pkg_resources import DistributionNotFound as PackageNotFoundError
+            from pkg_resources import get_distribution
             def version(package_name):
                 return get_distribution("formamotus").version
     try:
@@ -178,7 +191,7 @@ if BPY_AVAILABLE:
         from . import robot_visualizer
         from . import utils
         check_requirements(optional=True, upgrade_pip=False, extra=False, install=False)
-    except ImportError as e:
+    except ImportError:
         check_requirements(optional=True, upgrade_pip=True, extra=False, install=True)
         print('\033[92m' + '\033[1m' + "FormaMotus: " + installation_finished_message + '\033[0m')
 else:
