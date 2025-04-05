@@ -135,7 +135,6 @@ def register():
         sys.path.append(os.path.join(addon_dir, "libs"))
 
         from . import robot_visualizer
-        from . import utils
 
         # Recursively import all submodules
         def import_submodules(package, recursive=True, verbose=False):
@@ -176,7 +175,6 @@ def unregister():
     print("\n" + "-" * 100)
     print("Unregistering FormaMotus...")
     from . import robot_visualizer
-    from . import utils
 
     bpy.utils.unregister_class(FormaMotusPanel)
     robot_visualizer.unregister()
@@ -203,12 +201,9 @@ if "blender" not in sys.executable.lower() and not BPY_AVAILABLE:
 if BPY_AVAILABLE:
     try:
         from . import robot_visualizer
-        from . import utils
     except ImportError:
         check_requirements(optional=True, upgrade_pip=True, extra=False, install=True)
         print('\033[92m' + '\033[1m' + "FormaMotus: " + installation_finished_message + '\033[0m')
         from . import robot_visualizer
-        from . import utils
 else:
     from . import robot_visualizer
-    from . import utils

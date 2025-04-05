@@ -1,13 +1,13 @@
 import re  # Added for cleaning property names
+from typing import ClassVar
 
 import bpy
 import numpy as np
-from skrobot.model import RobotModel
 from skrobot.data import pr2_urdfpath
+from skrobot.model import RobotModel
 from skrobot.utils.urdf import no_mesh_load_mode
 
 from formamotus.utils.rendering_utils import enable_freestyle
-
 
 _robot_model = None
 _cylinder_objects = {}
@@ -61,7 +61,6 @@ def update_joint_position(self, context):
         end_pos = link.worldpos()
         direction = end_pos - start_pos
         length = np.linalg.norm(direction)
-        thin_radius = 0.03  # Same radius as the connector cylinder
 
         if length > 1e-6:
             mid_pos = start_pos + direction * 0.5
@@ -149,7 +148,7 @@ def unregister_custom_properties():
 class RobotVisualizerOperator(bpy.types.Operator):
     bl_idname = "robot_viz.visualize_robot"
     bl_label = "Visualize Robot Model"
-    bl_options = {'REGISTER', 'UNDO'}
+    bl_options: ClassVar[set[str]] = {'REGISTER', 'UNDO'}
 
     def clean_property_name(self, joint_name):
         """Clean joint name to create a valid property name."""

@@ -58,9 +58,8 @@ def merge_overlapping_cylinders():
 
                     try:
                         bpy.data.objects.remove(obj2, do_unlink=True)
-                    except:
-                        pass
-
+                    except Exception as e:
+                        print(f"Failed to remove {obj2.name}: {e}")
                     merged = True
                     break
             if merged:
