@@ -1,0 +1,13 @@
+*~
+*.egg/
+*.pyc
+\#*\#
+.\#*
+/scikit_robot.egg-info/
+/build/
+/dist/
+/src/
+build
+/docs/source/**/reference/**/generated
+*.zip
+*.tar.gz
