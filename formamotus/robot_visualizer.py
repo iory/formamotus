@@ -1,12 +1,10 @@
+import re  # Added for cleaning property names
+
 import bpy
 import numpy as np
-from skrobot.model import Cylinder
-from skrobot.model import Link
 from skrobot.model import RobotModel
 from skrobot.data import pr2_urdfpath
 from skrobot.utils.urdf import no_mesh_load_mode
-from mathutils import Vector, Quaternion
-import re  # Added for cleaning property names
 
 from formamotus.utils.rendering_utils import enable_freestyle
 
@@ -153,10 +151,6 @@ class RobotVisualizerOperator(bpy.types.Operator):
     bl_label = "Visualize Robot Model"
     bl_options = {'REGISTER', 'UNDO'}
 
-    # Class variables to store robot model and link information
-    base_link_list = []
-    cylinder_objects = {}  # Mapping of joint name to Blender object
-
     def clean_property_name(self, joint_name):
         """Clean joint name to create a valid property name."""
         # Replace spaces, slashes, and other special characters with underscores
@@ -268,13 +262,7 @@ class RobotVisualizerOperator(bpy.types.Operator):
         # Add joint angle properties
         self.add_joint_angle_properties(context)
 
-        # Initialize the base model
-        base = RobotModel()
-        base.root_link = Link()
-        base.assoc(base.root_link)
-
-        self.cylinder_objects = {}
-        links = [(_robot_model.root_link, base.root_link, base.root_link.copy_worldcoords())]
+        links = [(_robot_model.root_link, _robot_model.root_link, _robot_model.root_link.copy_worldcoords())]
         radius = 0.03
         height = 0.15
 
@@ -282,8 +270,7 @@ class RobotVisualizerOperator(bpy.types.Operator):
             link, org_parent_link, parent_coords = links.pop()
             if link.joint is not None and link.joint.type != 'fixed':
                 org_parent_coords = parent_coords.copy_worldcoords()
-                parent_link = Cylinder(radius, height, vertex_colors=(0, 0, 0, 127))
-                parent_link.newcoords(link.copy_worldcoords())
+                parent_link = link.copy_worldcoords()
                 parent_coords = parent_link.copy_worldcoords()
 
                 axis = link.joint.axis
@@ -325,7 +312,7 @@ class RobotVisualizerOperator(bpy.types.Operator):
                 cylinder.data.materials.append(mat)
 
                 # Map the cylinder to the link
-                self.cylinder_objects[link] = cylinder
+                _cylinder_objects[link] = cylinder
 
                 start_pos = org_parent_coords.worldpos()
                 end_pos = parent_coords.worldpos()
@@ -383,7 +370,6 @@ class RobotVisualizerOperator(bpy.types.Operator):
         bpy.ops.render.render(write_still=True)
 
         self.report({'INFO'}, "Robot visualization completed!")
-        _cylinder_objects = self.cylinder_objects
         return {'FINISHED'}
 
 
