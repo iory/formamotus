@@ -204,10 +204,11 @@ if BPY_AVAILABLE:
     try:
         from . import robot_visualizer
         from . import utils
-        check_requirements(optional=True, upgrade_pip=False, extra=False, install=False)
     except ImportError:
         check_requirements(optional=True, upgrade_pip=True, extra=False, install=True)
         print('\033[92m' + '\033[1m' + "FormaMotus: " + installation_finished_message + '\033[0m')
+        from . import robot_visualizer
+        from . import utils
 else:
     from . import robot_visualizer
     from . import utils
