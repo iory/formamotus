@@ -4,11 +4,20 @@ from skrobot.model import Cylinder
 from skrobot.model import Link
 from skrobot.model import RobotModel
 from skrobot.models import PR2
+from skrobot.data import pr2_urdfpath
+from skrobot.utils.urdf import no_mesh_load_mode
 
 from formamotus.utils.rendering_utils import enable_freestyle
 
 
 def register_custom_properties():
+    bpy.types.Scene.formamotus_urdf_filepath = bpy.props.StringProperty(
+        name="URDF Filepath",
+        description="Path to load URDF filepath",
+        default=str(pr2_urdfpath()),
+        subtype='FILE_PATH'
+    )
+
     bpy.types.Scene.formamotus_render_filepath = bpy.props.StringProperty(
         name="Render Filepath",
         description="Path to save the rendered image",
@@ -54,6 +63,7 @@ def register_custom_properties():
 
 
 def unregister_custom_properties():
+    del bpy.types.Scene.formamotus_urdf_filepath
     del bpy.types.Scene.formamotus_render_filepath
     del bpy.types.Scene.formamotus_revolute_color
     del bpy.types.Scene.formamotus_prismatic_color
@@ -73,6 +83,7 @@ class RobotVisualizerOperator(bpy.types.Operator):
         prismatic_color = scene.formamotus_prismatic_color
         continuous_color = scene.formamotus_continuous_color
         default_color = scene.formamotus_default_color
+        urdf_filepath = scene.formamotus_urdf_filepath
 
         bpy.ops.object.select_all(action='DESELECT')
         bpy.ops.object.select_all(action='SELECT')
@@ -84,28 +95,13 @@ class RobotVisualizerOperator(bpy.types.Operator):
         bg_node.inputs[0].default_value = (1, 1, 1, 1)
         bg_node.inputs[1].default_value = 1.0
 
-        robot_model = PR2()
-        robot_model.reset_pose()
-        robot_model.init_pose()
-        robot_model.gripper_distance(0.1)
+        robot_model = RobotModel()
+        with no_mesh_load_mode():
+            robot_model.load_urdf_file(urdf_filepath)
 
         base = RobotModel()
         base.root_link = Link()
         base.assoc(base.root_link)
-
-        valid_joint_names = [
-            'fl_caster_rotation_joint', 'fl_caster_l_wheel_joint', 'fl_caster_r_wheel_joint',
-            'fr_caster_rotation_joint', 'fr_caster_l_wheel_joint', 'fr_caster_r_wheel_joint',
-            'bl_caster_rotation_joint', 'bl_caster_l_wheel_joint', 'bl_caster_r_wheel_joint',
-            'br_caster_rotation_joint', 'br_caster_l_wheel_joint', 'br_caster_r_wheel_joint',
-            'torso_lift_joint', 'head_pan_joint', 'head_tilt_joint',
-            'r_shoulder_pan_joint', 'r_shoulder_lift_joint', 'r_upper_arm_roll_joint',
-            'r_forearm_roll_joint', 'r_elbow_flex_joint', 'r_wrist_flex_joint',
-            'r_wrist_roll_joint', 'r_gripper_l_finger_tip_joint', 'r_gripper_r_finger_tip_joint',
-            'l_shoulder_pan_joint', 'l_shoulder_lift_joint', 'l_upper_arm_roll_joint',
-            'l_forearm_roll_joint', 'l_elbow_flex_joint', 'l_wrist_flex_joint',
-            'l_wrist_roll_joint', 'l_gripper_l_finger_tip_joint', 'l_gripper_r_finger_tip_joint',
-        ]
 
         base_link_list = []
         links = [(robot_model.root_link, base.root_link, base.root_link.copy_worldcoords())]
@@ -114,7 +110,7 @@ class RobotVisualizerOperator(bpy.types.Operator):
 
         while links:
             link, parent_link, parent_coords = links.pop()
-            if link.joint is not None and link.joint.type != 'fixed' and link.joint.name in valid_joint_names:
+            if link.joint is not None and link.joint.type != 'fixed':
                 org_parent_coords = parent_coords.copy_worldcoords()
                 parent_link = Cylinder(radius, height, vertex_colors=(0, 0, 0, 127))
                 parent_link.newcoords(link.copy_worldcoords())

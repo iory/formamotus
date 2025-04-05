@@ -20,6 +20,7 @@ try:
 
             layout.operator("robot_viz.visualize_robot", text="Visualize Robot")
 
+            layout.prop(scene, "formamotus_urdf_filepath")
             layout.prop(scene, "formamotus_render_filepath")
             layout.prop(scene, "formamotus_revolute_color")
             layout.prop(scene, "formamotus_prismatic_color")
