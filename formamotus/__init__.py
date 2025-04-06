@@ -29,6 +29,12 @@ try:
             layout.prop(scene, "formamotus_continuous_color")
             layout.prop(scene, "formamotus_default_color")
 
+            # Add cylinder size controls
+            layout.label(text="Cylinder Size")
+            layout.prop(scene, "formamotus_cylinder_radius", slider=True)
+            layout.prop(scene, "formamotus_cylinder_height", slider=True)
+            layout.prop(scene, "formamotus_connector_cylinder_radius", slider=True)
+
             # Visualize Robot button
             layout.operator(robot_visualizer.RobotVisualizerOperator.bl_idname, text="Visualize Robot")
 

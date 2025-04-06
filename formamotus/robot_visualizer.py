@@ -12,6 +12,7 @@ from formamotus.utils.rendering_utils import enable_freestyle
 _robot_model = None
 _cylinder_objects = {}
 _thin_cylinder_objects = []
+_thin_cylinder_radius_scale = 0.03 * 0.3
 
 def set_robot_model(model):
     global _robot_model
@@ -21,10 +22,34 @@ def get_robot_model():
     return _robot_model
 
 
+def update_cylinder_size(self, context):
+    global _cylinder_objects
+    scene = context.scene
+    radius = scene.formamotus_cylinder_radius
+    height = scene.formamotus_cylinder_height
+
+    for _link, cylinder in _cylinder_objects.items():
+        cylinder.scale = (radius / 0.03, radius / 0.03, height / 0.15)
+    bpy.context.view_layer.update()
+
+def update_connector_cylinder_size(self, context):
+    global _thin_cylinder_objects
+    global _thin_cylinder_radius_scale
+    scene = context.scene
+    radius = scene.formamotus_connector_cylinder_radius
+
+    _thin_cylinder_radius_scale = radius / (0.03 * 0.3)
+    for _org_parent_link, _link, thin_cylinder, _org_length in _thin_cylinder_objects:
+        scale = thin_cylinder.scale
+        thin_cylinder.scale = (_thin_cylinder_radius_scale,
+                               _thin_cylinder_radius_scale, scale[2])
+    bpy.context.view_layer.update()
+
 def update_joint_position(self, context):
     global _cylinder_objects
     global _robot_model
     global _thin_cylinder_objects
+    global _thin_cylinder_radius_scale
     if not _cylinder_objects or not _robot_model:
         return
     scene = context.scene
@@ -65,7 +90,8 @@ def update_joint_position(self, context):
         if length > 1e-6:
             mid_pos = start_pos + direction * 0.5
             thin_cylinder.location = mid_pos
-            thin_cylinder.scale = (1, 1, length / org_length)
+            thin_cylinder.scale = (_thin_cylinder_radius_scale, _thin_cylinder_radius_scale,
+                                   length / org_length)
 
             # Compute the rotation axis and angle
             z_axis = np.array([0, 0, 1])
@@ -134,6 +160,29 @@ def register_custom_properties():
         size=4
     )
 
+    bpy.types.Scene.formamotus_cylinder_radius = bpy.props.FloatProperty(
+        name="Cylinder Radius",
+        description="Radius of the joint cylinders",
+        default=0.03,
+        min=0.000001, max=1.0,
+        update=update_cylinder_size
+    )
+
+    bpy.types.Scene.formamotus_cylinder_height = bpy.props.FloatProperty(
+        name="Cylinder Height",
+        description="Height of the joint cylinders",
+        default=0.15,
+        min=0.000001, max=2.0,
+        update=update_cylinder_size
+    )
+
+    bpy.types.Scene.formamotus_connector_cylinder_radius = bpy.props.FloatProperty(
+        name="Connector Cylinder Radius",
+        description="Radius of the joint cylinders for connector",
+        default=0.03 * 0.3,
+        min=0.00001, max=1.0,
+        update=update_connector_cylinder_size
+    )
 
 def unregister_custom_properties():
     """Unregister custom properties from the scene."""
@@ -143,7 +192,8 @@ def unregister_custom_properties():
     del bpy.types.Scene.formamotus_prismatic_color
     del bpy.types.Scene.formamotus_continuous_color
     del bpy.types.Scene.formamotus_default_color
-
+    del bpy.types.Scene.formamotus_cylinder_radius
+    del bpy.types.Scene.formamotus_cylinder_height
 
 class RobotVisualizerOperator(bpy.types.Operator):
     bl_idname = "robot_viz.visualize_robot"
