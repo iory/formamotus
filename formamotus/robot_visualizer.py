@@ -355,10 +355,12 @@ class RobotVisualizerOperator(bpy.types.Operator):
                 mat = bpy.data.materials.new(name=f"Material_{link.name}")
                 mat.use_nodes = True
                 nodes = mat.node_tree.nodes
-                principled = nodes.get("Principled BSDF")
-                principled.inputs["Base Color"].default_value = random_color
-                principled.inputs["Alpha"].default_value = 1.0
-                mat.blend_method = 'BLEND'
+                nodes.clear()  # Clear default nodes
+                emission = nodes.new("ShaderNodeEmission")
+                output = nodes.new("ShaderNodeOutputMaterial")
+                emission.inputs["Color"].default_value = random_color
+                emission.inputs["Strength"].default_value = 1.0
+                mat.node_tree.links.new(emission.outputs["Emission"], output.inputs["Surface"])
                 cylinder.data.materials.append(mat)
 
                 # Map the cylinder to the link
@@ -387,13 +389,16 @@ class RobotVisualizerOperator(bpy.types.Operator):
                         thin_cylinder.rotation_mode = 'QUATERNION'
                         thin_cylinder.rotation_quaternion = [1, 0, 0, 0]
 
+                    # Use Emission shader for connectors
                     thin_mat = bpy.data.materials.new(name=f"ConnectorMaterial_{org_parent_link.name}_to_{link.name}")
                     thin_mat.use_nodes = True
                     thin_nodes = thin_mat.node_tree.nodes
-                    thin_principled = thin_nodes.get("Principled BSDF")
-                    thin_principled.inputs["Base Color"].default_value = (0, 0, 0, 1)
-                    thin_principled.inputs["Alpha"].default_value = 1.0
-                    thin_mat.blend_method = 'BLEND'
+                    thin_nodes.clear()
+                    thin_emission = thin_nodes.new("ShaderNodeEmission")
+                    thin_output = thin_nodes.new("ShaderNodeOutputMaterial")
+                    thin_emission.inputs["Color"].default_value = (0, 0, 0, 1)  # Black for connectors
+                    thin_emission.inputs["Strength"].default_value = 1.0
+                    thin_mat.node_tree.links.new(thin_emission.outputs["Emission"], thin_output.inputs["Surface"])
                     thin_cylinder.data.materials.append(thin_mat)
                     _thin_cylinder_objects.append((
                         org_parent_link,
