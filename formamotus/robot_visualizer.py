@@ -2,6 +2,8 @@ import re  # Added for cleaning property names
 from typing import ClassVar
 
 import bpy
+from mathutils import Matrix
+from mathutils import Vector
 import numpy as np
 from skrobot.data import pr2_urdfpath
 from skrobot.model import RobotModel
@@ -280,7 +282,6 @@ class RobotVisualizerOperator(bpy.types.Operator):
         global _robot_model
         global _thin_cylinder_objects
         scene = context.scene
-        render_filepath = scene.formamotus_render_filepath
         revolute_color = scene.formamotus_revolute_color
         prismatic_color = scene.formamotus_prismatic_color
         continuous_color = scene.formamotus_continuous_color
@@ -404,29 +405,102 @@ class RobotVisualizerOperator(bpy.types.Operator):
             for child_link in link.child_links:
                 links.append((child_link, org_parent_link, parent_coords.copy_worldcoords()))
 
-        # Add light and camera
-        bpy.ops.object.light_add(type='POINT', location=(3, -3, 10))
+        self.report({'INFO'}, "Robot visualization completed!")
+        return {'FINISHED'}
+
+
+class RobotRenderOperator(bpy.types.Operator):
+    bl_idname = "robot_viz.render_robot"
+    bl_label = "Render Robot Image"
+    bl_options: ClassVar[set[str]] = {'REGISTER', 'UNDO'}
+
+    def setup_camera_and_light(self, context, center, size):
+        """Set up camera and light to view the robot from right-front, 45 degrees above."""
+
+        # Remove existing camera if it exists
+        if context.scene.camera:
+            bpy.data.objects.remove(context.scene.camera, do_unlink=True)
+
+        # Camera settings
+        distance = size * 2.0  # Distance to fit the robot comfortably
+        angle_rad = np.deg2rad(45)
+        camera_x = center[0] + distance * np.cos(angle_rad)  # Right-front in XY plane
+        camera_y = center[1] + distance * np.cos(angle_rad)
+        camera_z = center[2] + distance * np.sin(angle_rad)  # 45 degrees up
+
+        bpy.ops.object.camera_add(location=(camera_x, camera_y, camera_z))
+        camera = bpy.context.object
+        camera.data.lens = 35  # Focal length for natural framing
+        camera.data.clip_end = distance * 2  # Ensure far objects are not clipped
+
+        # Camera position and target center
+        camera_x, camera_y, camera_z = center[0] + size * 2, center[1] + size * 2, center[2] + size * 2
+        camera_pos = Vector((camera_x, camera_y, camera_z))
+        center = Vector(center)
+
+        # Direction from camera to center
+        direction = center - camera_pos
+        if direction.length > 1e-6:
+            direction.normalize()
+            up = Vector((0, 0, 1))
+
+            z_axis = -direction
+            x_axis = up.cross(z_axis).normalized()
+            y_axis = z_axis.cross(x_axis).normalized()
+
+            mat_rot = Matrix((
+                (x_axis.x, y_axis.x, z_axis.x, 0),
+                (x_axis.y, y_axis.y, z_axis.y, 0),
+                (x_axis.z, y_axis.z, z_axis.z, 0),
+                (0,        0,        0,        1)
+            ))
+
+            camera = context.scene.camera
+            camera.matrix_world = mat_rot
+            camera.location = camera_pos
+
+        # Light settings
+        bpy.ops.object.light_add(type='POINT', location=(camera_x, camera_y, camera_z + 2))
         light = bpy.context.object
         light.data.energy = 1000
         light.data.shadow_soft_size = 0
         light.data.use_shadow = False
 
-        bpy.ops.object.camera_add(location=(3, -3, 3), rotation=(1.1, 0, 0.78))
-        camera = bpy.context.object
+        # Set the camera as the active camera
         bpy.context.scene.camera = camera
+
+    def render_scene(self, context, render_filepath):
+        """Render the scene and save the output to the specified filepath."""
+        global _cylinder_objects
+        # Calculate the bounding box of the robot
+        min_coords = np.array([float('inf')] * 3)
+        max_coords = np.array([-float('inf')] * 3)
+        for link in _cylinder_objects.keys():
+            pos = link.worldpos()
+            min_coords = np.minimum(min_coords, pos)
+            max_coords = np.maximum(max_coords, pos)
+        center = (min_coords + max_coords) / 2
+        size = np.max(max_coords - min_coords)
+        self.setup_camera_and_light(context, center, size)
         bpy.context.scene.render.image_settings.file_format = 'PNG'
         bpy.context.scene.render.filepath = render_filepath
         bpy.ops.render.render(write_still=True)
+        self.report({'INFO'}, "Rendering completed!")
 
-        self.report({'INFO'}, "Robot visualization completed!")
+    def execute(self, context):
+        scene = context.scene
+        render_filepath = scene.formamotus_render_filepath
+        # Reuse the render_scene method from RobotVisualizerOperator
+        self.render_scene(context, render_filepath)
         return {'FINISHED'}
-
 
 def register():
     register_custom_properties()
     bpy.utils.register_class(RobotVisualizerOperator)
+    bpy.utils.register_class(RobotRenderOperator)
 
 
 def unregister():
     unregister_custom_properties()
     bpy.utils.unregister_class(RobotVisualizerOperator)
+    bpy.utils.unregister_class(RobotRenderOperator)

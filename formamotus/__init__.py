@@ -37,6 +37,8 @@ try:
 
             # Visualize Robot button
             layout.operator(robot_visualizer.RobotVisualizerOperator.bl_idname, text="Visualize Robot")
+            # Render Robot button
+            layout.operator(robot_visualizer.RobotRenderOperator.bl_idname, text="Render Image")
 
             layout.label(text=f"Robot Model: {robot_visualizer._robot_model}")
             # Joint angle sliders
