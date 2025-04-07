@@ -70,7 +70,7 @@ bl_info = {
 
 requirements = {
     "numpy": "numpy",
-    "scikit-robot": "scikit-robot",
+    "skrobot": "scikit-robot",
 }
 
 optional_requirements = {}
@@ -209,9 +209,9 @@ if "blender" not in sys.executable.lower() and not BPY_AVAILABLE:
 if BPY_AVAILABLE:
     try:
         from . import robot_visualizer
-    except ImportError:
+    except ImportError as e:
         check_requirements(optional=True, upgrade_pip=True, extra=False, install=True)
         print('\033[92m' + '\033[1m' + "FormaMotus: " + installation_finished_message + '\033[0m')
-        from . import robot_visualizer
 else:
     from . import robot_visualizer
+del sys
