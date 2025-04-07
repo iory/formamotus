@@ -24,7 +24,7 @@ jobs:
       - name: Install dependencies
         run: |
             sudo apt update
-            sudo apt install -y wget unzip xvfb libglu1-mesa
+            sudo apt install -y wget unzip xvfb libglu1-mesa freeglut3-dev
 
       - name: Install Blender
         run: |
