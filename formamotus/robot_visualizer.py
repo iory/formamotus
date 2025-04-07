@@ -433,10 +433,14 @@ class RobotRenderOperator(bpy.types.Operator):
         camera_y = center[1] + distance * np.cos(angle_rad)
         camera_z = center[2] + distance * np.sin(angle_rad)  # 45 degrees up
 
-        bpy.ops.object.camera_add(location=(camera_x, camera_y, camera_z))
-        camera = bpy.context.object
-        camera.data.lens = 35  # Focal length for natural framing
-        camera.data.clip_end = distance * 2  # Ensure far objects are not clipped
+        # Create camera manually instead of using bpy.ops
+        camera_data = bpy.data.cameras.new(name="RobotCamera")
+        camera = bpy.data.objects.new("RobotCamera", camera_data)
+        camera.location = (camera_x, camera_y, camera_z)
+        camera.data.lens = 35
+        camera.data.clip_end = distance * 2
+        context.scene.collection.objects.link(camera)  # Link to scene
+        context.scene.camera = camera  # Set as active camera
 
         # Camera position and target center
         camera_x, camera_y, camera_z = center[0] + size * 2, center[1] + size * 2, center[2] + size * 2
@@ -472,7 +476,7 @@ class RobotRenderOperator(bpy.types.Operator):
         light.data.use_shadow = False
 
         # Set the camera as the active camera
-        bpy.context.scene.camera = camera
+        context.scene.camera = camera
 
     def render_scene(self, context, render_filepath):
         """Render the scene and save the output to the specified filepath."""
