@@ -8,6 +8,8 @@
 ![RenderedImage](docs/image/pr2_render.png)
 ![BlenderOperation](docs/image/operation-forma-motus.gif)
 
+![BlenderOperation](docs/image/operation-forma-motus.gif)
+
 ## Features
 - Load and visualize robot models from URDF files in Blender
 - Customizable colors for different joint types (revolute, prismatic, continuous, etc.)
