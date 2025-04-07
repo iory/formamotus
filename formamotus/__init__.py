@@ -135,6 +135,7 @@ def check_requirements(optional=False, extra=False, force=False, upgrade_pip=Fal
                 else:
                     raise e
     importlib.invalidate_caches()
+    import skrobot  # NOQA
 
 def register():
     """This function registers all modules to Blender."""
