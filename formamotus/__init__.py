@@ -209,9 +209,8 @@ if "blender" not in sys.executable.lower() and not BPY_AVAILABLE:
 if BPY_AVAILABLE:
     try:
         from . import robot_visualizer
-    except ImportError as e:
+    except ImportError:
         check_requirements(optional=True, upgrade_pip=True, extra=False, install=True)
         print('\033[92m' + '\033[1m' + "FormaMotus: " + installation_finished_message + '\033[0m')
 else:
     from . import robot_visualizer
-del sys
