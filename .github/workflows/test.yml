@@ -35,6 +35,10 @@ jobs:
           sudo mv blender-3.6.0-linux-x64 /opt/blender
           sudo ln -s /opt/blender/blender /usr/local/bin/blender
 
-      - name: Run Blender test
+      - name: Install Blender Addon
         run: |
           blender -b -P ./bin/install_formamotus.py
+
+      - name: Run Blender test
+        run: |
+          blender -b -P ./bin/run_formamotus.py
