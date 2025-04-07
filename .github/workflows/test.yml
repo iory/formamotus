@@ -1,0 +1,40 @@
+name: Test FormaMotus Blender Addon
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Install dependencies
+        run: |
+            sudo apt update
+            sudo apt install -y wget unzip xvfb libglu1-mesa
+
+      - name: Install Blender
+        run: |
+          sudo apt update
+          sudo apt install -y wget
+          wget https://download.blender.org/release/Blender3.6/blender-3.6.0-linux-x64.tar.xz
+          tar -xvf blender-3.6.0-linux-x64.tar.xz
+          sudo mv blender-3.6.0-linux-x64 /opt/blender
+          sudo ln -s /opt/blender/blender /usr/local/bin/blender
+
+      - name: Run Blender test
+        run: |
+          blender -b -P ./bin/install_formamotus.py
