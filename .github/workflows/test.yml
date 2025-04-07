@@ -41,4 +41,4 @@ jobs:
 
       - name: Run Blender test
         run: |
-          blender -b -P ./bin/run_formamotus.py
+          xvfb-run blender -b -P ./bin/run_formamotus.py
