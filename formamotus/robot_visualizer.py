@@ -14,7 +14,6 @@ from formamotus.utils.rendering_utils import enable_freestyle
 _robot_model = None
 _cylinder_objects = {}
 _thin_cylinder_objects = []
-_thin_cylinder_radius_scale = 0.03 * 0.3
 
 def set_robot_model(model):
     global _robot_model
@@ -36,22 +35,19 @@ def update_cylinder_size(self, context):
 
 def update_connector_cylinder_size(self, context):
     global _thin_cylinder_objects
-    global _thin_cylinder_radius_scale
     scene = context.scene
     radius = scene.formamotus_connector_cylinder_radius
 
-    _thin_cylinder_radius_scale = radius / (0.03 * 0.3)
+    radius_scale = radius / (0.03 * 0.3)
     for _org_parent_link, _link, thin_cylinder, _org_length in _thin_cylinder_objects:
         scale = thin_cylinder.scale
-        thin_cylinder.scale = (_thin_cylinder_radius_scale,
-                               _thin_cylinder_radius_scale, scale[2])
+        thin_cylinder.scale = (radius_scale, radius_scale, scale[2])
     bpy.context.view_layer.update()
 
 def update_joint_position(self, context):
     global _cylinder_objects
     global _robot_model
     global _thin_cylinder_objects
-    global _thin_cylinder_radius_scale
     if not _cylinder_objects or not _robot_model:
         return
     scene = context.scene
@@ -92,9 +88,7 @@ def update_joint_position(self, context):
         if length > 1e-6:
             mid_pos = start_pos + direction * 0.5
             thin_cylinder.location = mid_pos
-            thin_cylinder.scale = (_thin_cylinder_radius_scale, _thin_cylinder_radius_scale,
-                                   length / org_length)
-
+            thin_cylinder.scale = (thin_cylinder.scale[0], thin_cylinder.scale[1], length / org_length)
             # Compute the rotation axis and angle
             z_axis = np.array([0, 0, 1])
             rot_axis = np.cross(z_axis, direction)
