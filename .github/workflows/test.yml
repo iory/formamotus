@@ -42,3 +42,13 @@ jobs:
       - name: Run Blender test
         run: |
           xvfb-run blender -b -P ./bin/run_formamotus.py
+
+      - name: Check render output
+        # Check if /tmp/render_output.png exists, fail if it doesn't
+        run: |
+          if [ -f "/tmp/render_output.png" ]; then
+            echo "Render output found!"
+          else
+            echo "Error: /tmp/render_output.png not found!"
+            exit 1
+          fi
