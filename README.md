@@ -6,6 +6,7 @@
 **FormaMotus** is a Blender add-on designed to visualize robot kinematics structures within Blender. It loads robot models from URDF (Unified Robot Description Format) files, visually represents joints and links, and provides rendering capabilities.
 
 ![RenderedImage](docs/image/pr2_render.png)
+![BlenderOperation](docs/image/operation-forma-motus.gif)
 
 ## Features
 - Load and visualize robot models from URDF files in Blender

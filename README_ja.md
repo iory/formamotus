@@ -3,6 +3,7 @@
 **FormaMotus** は、Blender内でロボットのキネマティクス構造を可視化するためのアドオンです。URDF（Unified Robot Description Format）ファイルからロボットモデルを読み込み、関節やリンクを視覚的に表現し、レンダリング機能も提供します。
 
 ![RenderedImage](docs/image/pr2_render.png)
+![BlenderOperation](docs/image/operation-forma-motus.gif)
 
 ## 特徴
 - URDFファイルからロボットモデルを読み込み、Blender内で可視化
