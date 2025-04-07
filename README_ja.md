@@ -14,7 +14,7 @@
 ## インストール
 1. **リポジトリをダウンロード**
 
-    [Zip Repository](https://github.com/iory/formamotus/archive/refs/heads/main.zip)
+    [Zip Repository](https://github.com/iory/formamotus/releases/download/v1.0.0/formamotus.zip)
 
 2. **Blenderにアドオンをインストール**
 - Blenderを開き、`Edit > Preferences > Add-ons` に移動します。
