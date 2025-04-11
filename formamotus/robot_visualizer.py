@@ -26,19 +26,18 @@ def get_robot_model():
 def update_cylinder_size(self, context):
     global _cylinder_objects
     scene = context.scene
-    radius = scene.formamotus_cylinder_radius
-    height = scene.formamotus_cylinder_height
+    radius_m = scene.formamotus_cylinder_radius / 1000.0
+    height_m = scene.formamotus_cylinder_height / 1000.0
 
     for _link, cylinder in _cylinder_objects.items():
-        cylinder.scale = (radius / 0.03, radius / 0.03, height / 0.15)
+        cylinder.scale = (radius_m / 0.03, radius_m / 0.03, height_m / 0.15)
     bpy.context.view_layer.update()
 
 def update_connector_cylinder_size(self, context):
     global _thin_cylinder_objects
     scene = context.scene
-    radius = scene.formamotus_connector_cylinder_radius
-
-    radius_scale = radius / (0.03 * 0.3)
+    radius_m = scene.formamotus_connector_cylinder_radius / 1000.0
+    radius_scale = radius_m / (0.03 * 0.3)
     for _org_parent_link, _link, thin_cylinder, _org_length in _thin_cylinder_objects:
         scale = thin_cylinder.scale
         thin_cylinder.scale = (radius_scale, radius_scale, scale[2])
@@ -57,8 +56,14 @@ def update_joint_position(self, context):
         if joint and joint.type != 'fixed':
             prop_name = f"formamotus_joint_angle_{joint_name.replace(' ', '_').replace('/', '_')}"
             if hasattr(scene, prop_name):
-                joint_angle = getattr(scene, prop_name)
-                joint.joint_angle(joint_angle)
+                joint_angle_ui = getattr(scene, prop_name)
+                if joint.type == 'prismatic':
+                    joint.joint_angle(joint_angle_ui / 1000.0)
+                elif joint.type in ['revolute', 'continuous']:
+                    joint.joint_angle(np.deg2rad(joint_angle_ui))
+                else:
+                    joint.joint_angle(joint_angle_ui)
+
     for link, cylinder in _cylinder_objects.items():
         # Update the position and rotation of the cylinder
         parent_link = link.copy_worldcoords()
@@ -157,26 +162,26 @@ def register_custom_properties():
     )
 
     bpy.types.Scene.formamotus_cylinder_radius = bpy.props.FloatProperty(
-        name="Cylinder Radius",
+        name="Cylinder Radius (mm)",
         description="Radius of the joint cylinders",
-        default=0.03,
-        min=0.000001, max=1.0,
+        default=30.0,
+        min=0.001, max=1000.0,
         update=update_cylinder_size
     )
 
     bpy.types.Scene.formamotus_cylinder_height = bpy.props.FloatProperty(
-        name="Cylinder Height",
+        name="Cylinder Height (mm)",
         description="Height of the joint cylinders",
-        default=0.15,
-        min=0.000001, max=2.0,
+        default=150.0,
+        min=0.001, max=2000.0,
         update=update_cylinder_size
     )
 
     bpy.types.Scene.formamotus_connector_cylinder_radius = bpy.props.FloatProperty(
-        name="Connector Cylinder Radius",
+        name="Connector Cylinder Radius (mm)",
         description="Radius of the joint cylinders for connector",
-        default=0.03 * 0.3,
-        min=0.00001, max=1.0,
+        default=9.0,
+        min=0.001, max=1000.0,
         update=update_connector_cylinder_size
     )
 
@@ -190,6 +195,7 @@ def unregister_custom_properties():
     del bpy.types.Scene.formamotus_default_color
     del bpy.types.Scene.formamotus_cylinder_radius
     del bpy.types.Scene.formamotus_cylinder_height
+
 
 class RobotVisualizerOperator(bpy.types.Operator):
     bl_idname = "robot_viz.visualize_robot"
@@ -227,18 +233,32 @@ class RobotVisualizerOperator(bpy.types.Operator):
 
                 # Ensure min_angle and max_angle are finite and valid
                 if not np.isfinite(min_angle) or min_angle is None:
-                    min_angle = -np.pi
+                    min_angle = 0.0 if joint.type == 'prismatic' else -np.pi
                 if not np.isfinite(max_angle) or max_angle is None:
-                    max_angle = np.pi
+                    max_angle = 0.1 if joint.type == 'prismatic' else np.pi
 
                 # Ensure min_angle < max_angle
                 if min_angle >= max_angle:
-                    min_angle, max_angle = -np.pi, np.pi
+                    if joint.type in ['revolute', 'continuous']:
+                        min_angle, max_angle = -np.pi, np.pi
+                    else:
+                        min_angle, max_angle = 0.0, 0.1
 
                 if joint.type == 'continuous':
                     min_angle, max_angle = -np.pi, np.pi  # Default range for continuous joints
 
-                # Log min_angle and max_angle
+                unit_name = ''
+                if joint.type == 'prismatic':
+                    # meter to mm
+                    min_angle *= 1000.0
+                    max_angle *= 1000.0
+                    unit_name = ' (mm)'
+                elif joint.type in ['revolute', 'continuous']:
+                    # rad to degree
+                    min_angle = np.degrees(min_angle)
+                    max_angle = np.degrees(max_angle)
+                    unit_name = ' (deg)'
+
                 message = f"Joint: {joint_name}, min_angle: {min_angle}, max_angle: {max_angle}"
                 self.report({'INFO'}, message)
 
@@ -257,7 +277,7 @@ class RobotVisualizerOperator(bpy.types.Operator):
                         bpy.types.Scene,
                         prop_name,
                         bpy.props.FloatProperty(
-                            name=f"{joint_name} Angle",
+                            name=f"{joint_name} Angle{unit_name}",
                             description=f"Angle for joint {joint_name}",
                             default=0.0,
                             min=min_angle,

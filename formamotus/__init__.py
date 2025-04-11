@@ -30,7 +30,7 @@ try:
             layout.prop(scene, "formamotus_default_color")
 
             # Add cylinder size controls
-            layout.label(text="Cylinder Size")
+            layout.label(text="Cylinder Size (mm)")
             layout.prop(scene, "formamotus_cylinder_radius", slider=True)
             layout.prop(scene, "formamotus_cylinder_height", slider=True)
             layout.prop(scene, "formamotus_connector_cylinder_radius", slider=True)
