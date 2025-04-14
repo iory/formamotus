@@ -18,37 +18,49 @@ try:
             layout = self.layout
             scene = context.scene
 
-            # URDF filepath and render filepath
-            layout.prop(scene, "formamotus_urdf_filepath")
-            layout.prop(scene, "formamotus_render_filepath")
+            # File paths
+            box = layout.box()
+            box.label(text="File Paths")
+            box.prop(scene, "formamotus_urdf_filepath")
+            box.prop(scene, "formamotus_render_filepath")
+
+            # Visualization options
+            box = layout.box()
+            box.label(text="Visualization Options")
+            box.prop(scene, "formamotus_use_mesh", text="Use Mesh Visualization")
+            box.label(text="Cylinder Size (mm)")
+            box.prop(scene, "formamotus_cylinder_radius", slider=True)
+            box.prop(scene, "formamotus_cylinder_height", slider=True)
+            box.prop(scene, "formamotus_connector_cylinder_radius", slider=True)
 
             # Joint color settings
-            layout.label(text="Joint Colors")
-            layout.prop(scene, "formamotus_revolute_color")
-            layout.prop(scene, "formamotus_prismatic_color")
-            layout.prop(scene, "formamotus_continuous_color")
-            layout.prop(scene, "formamotus_default_color")
+            box = layout.box()
+            box.label(text="Joint Colors")
+            box.prop(scene, "formamotus_revolute_color")
+            box.prop(scene, "formamotus_prismatic_color")
+            box.prop(scene, "formamotus_continuous_color")
+            box.prop(scene, "formamotus_default_color")
 
-            # Add cylinder size controls
-            layout.label(text="Cylinder Size (mm)")
-            layout.prop(scene, "formamotus_cylinder_radius", slider=True)
-            layout.prop(scene, "formamotus_cylinder_height", slider=True)
-            layout.prop(scene, "formamotus_connector_cylinder_radius", slider=True)
-
-            # Visualize Robot button
+            # Operator buttons
             layout.operator(robot_visualizer.RobotVisualizerOperator.bl_idname, text="Visualize Robot")
-            # Render Robot button
             layout.operator(robot_visualizer.RobotRenderOperator.bl_idname, text="Render Image")
 
-            layout.label(text=f"Robot Model: {robot_visualizer._robot_model}")
+            # Robot model info
+            robot_model = robot_visualizer.get_robot_model()
+            layout.label(text=f"Robot Model: {robot_model if robot_model else 'Not loaded'}")
+
             # Joint angle sliders
-            if robot_visualizer._robot_model:
-                for joint_name in robot_visualizer._robot_model.joint_names:
-                    joint = robot_visualizer._robot_model.__dict__.get(joint_name)
+            if robot_model:
+                box = layout.box()
+                box.label(text="Joint Angles")
+                for joint_name in robot_model.joint_names:
+                    joint = robot_model.__dict__.get(joint_name)
                     if joint and joint.type != 'fixed':
                         prop_name = f"formamotus_joint_angle_{joint_name.replace(' ', '_').replace('/', '_')}"
                         if hasattr(scene, prop_name):
-                           layout.prop(scene, prop_name, slider=True)
+                            box.prop(scene, prop_name, slider=True)
+            else:
+                layout.label(text="No robot model loaded.", icon='ERROR')
 
 except ImportError:
     pass
