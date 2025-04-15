@@ -1,3 +1,5 @@
+from collections import defaultdict
+import os
 import re  # Added for cleaning property names
 from typing import ClassVar
 
@@ -5,15 +7,21 @@ import bpy
 from mathutils import Matrix
 from mathutils import Vector
 import numpy as np
-from skrobot.data import pr2_urdfpath
+from skrobot.data import fetch_urdfpath
 from skrobot.model import RobotModel
 from skrobot.utils.urdf import no_mesh_load_mode
+from skrobot.utils.urdf import resolve_filepath
 
+from formamotus.utils.dae import fix_up_axis_and_get_materials
 from formamotus.utils.rendering_utils import enable_freestyle
 
 _robot_model = None
 _cylinder_objects = {}
 _thin_cylinder_objects = []
+_mesh_objects = defaultdict(list)
+_coordinates_offset = {}
+
+
 
 def set_robot_model(model):
     global _robot_model
@@ -47,6 +55,8 @@ def update_joint_position(self, context):
     global _cylinder_objects
     global _robot_model
     global _thin_cylinder_objects
+    global _mesh_objects
+    global _coordinates_offset
     if not _cylinder_objects or not _robot_model:
         return
     scene = context.scene
@@ -106,6 +116,15 @@ def update_joint_position(self, context):
                 thin_cylinder.rotation_mode = 'QUATERNION'
                 thin_cylinder.rotation_quaternion = [1, 0, 0, 0]
 
+    for link, mesh_objs in _mesh_objects.items():
+        link_coords = link.copy_worldcoords()
+        if link in _coordinates_offset:
+            link_coords = link_coords.copy_worldcoords().transform(_coordinates_offset[link].inverse_transformation())
+        for mesh_obj in mesh_objs:
+            mesh_obj.location = link_coords.worldpos()
+            mesh_obj.rotation_mode = 'QUATERNION'
+            mesh_obj.rotation_quaternion = link_coords.quaternion
+
     bpy.context.view_layer.update()
 
 
@@ -114,7 +133,7 @@ def register_custom_properties():
     bpy.types.Scene.formamotus_urdf_filepath = bpy.props.StringProperty(
         name="URDF Filepath",
         description="Path to load URDF filepath",
-        default=str(pr2_urdfpath()),
+        default=str(fetch_urdfpath()),
         subtype='FILE_PATH'
     )
 
@@ -185,6 +204,13 @@ def register_custom_properties():
         update=update_connector_cylinder_size
     )
 
+    bpy.types.Scene.formamotus_use_mesh = bpy.props.BoolProperty(
+        name="Use Mesh Visualization",
+        description="Enable to use mesh files from URDF for visualization",
+        default=True,
+        update=update_visibility
+    )
+
 def unregister_custom_properties():
     """Unregister custom properties from the scene."""
     del bpy.types.Scene.formamotus_urdf_filepath
@@ -195,6 +221,7 @@ def unregister_custom_properties():
     del bpy.types.Scene.formamotus_default_color
     del bpy.types.Scene.formamotus_cylinder_radius
     del bpy.types.Scene.formamotus_cylinder_height
+    del bpy.types.Scene.formamotus_use_mesh
 
 
 class RobotVisualizerOperator(bpy.types.Operator):
@@ -291,19 +318,83 @@ class RobotVisualizerOperator(bpy.types.Operator):
                     self.report({'INFO'}, f"Failed to add property {prop_name}: {e}")
                     raise
 
+    def import_mesh(self, mesh_filepath, link_name, link=None):
+        global _coordinates_offset
+        ext = os.path.splitext(mesh_filepath)[1].lower()
+        try:
+            if ext == '.stl':
+                if "stl_import" in dir(bpy.ops.wm):
+                    bpy.ops.wm.stl_import(
+                        filepath=mesh_filepath,
+                        up_axis='Z', forward_axis='Y', global_scale=1.0)
+                elif "stl" in dir(bpy.ops.import_mesh):
+                    bpy.ops.import_mesh.stl(
+                        filepath=mesh_filepath, global_scale=1.0)
+                else:
+                    self.report({'WARNING'}, "STL import is not supported")
+                    return None
+            elif ext == '.dae':
+                (file_path, _) = fix_up_axis_and_get_materials(mesh_filepath)
+                bpy.ops.wm.collada_import(filepath=file_path)
+            elif ext == '.obj':
+                if "obj_import" in dir(bpy.ops.wm):
+                    bpy.ops.wm.obj_import(
+                        filepath=mesh_filepath,
+                        up_axis='Z', forward_axis='Y', global_scale=1.0)
+                elif "obj" in dir(bpy.ops.import_mesh):
+                    bpy.ops.import_scene.obj(
+                        filepath=mesh_filepath, axis_forward="Y", axis_up="Z")
+                else:
+                    self.report({'WARNING'}, "OBJ import is not supported")
+                    return None
+            else:
+                self.report({'WARNING'}, f"Unsupported mesh format: {ext} for {link_name}")
+                return None
+
+            bpy.context.view_layer.objects.active = bpy.context.selected_objects[0]
+            if len(bpy.context.selected_objects) > 1:
+                bpy.ops.object.join()
+            if not bpy.context.object.data.uv_layers:
+                bpy.ops.mesh.uv_texture_add()
+
+            imported_objects = list(bpy.context.selected_objects)
+            if not imported_objects:
+                self.report({'WARNING'}, f"Failed to import mesh: {mesh_filepath}")
+                return None
+
+            if ext == '.dae':
+                if link is not None:
+                    _coordinates_offset[link] = link.copy_worldcoords()
+            mesh_obj = imported_objects[0]
+            mesh_obj.name = f"Mesh_{link_name}"
+            return mesh_obj
+        except Exception as e:
+            self.report({'WARNING'}, f"Error importing mesh {mesh_filepath}: {e}")
+            return None
+
+    def resolve_mesh_filepath(self, urdf_filepath, mesh_filename):
+        urdf_dir = os.path.dirname(urdf_filepath)
+        mesh_filepath = resolve_filepath(urdf_dir, mesh_filename)
+        return mesh_filepath
+
     def execute(self, context):
         global _cylinder_objects
         global _robot_model
         global _thin_cylinder_objects
+        global _mesh_objects
+        global _coordinates_offset
         scene = context.scene
         revolute_color = scene.formamotus_revolute_color
         prismatic_color = scene.formamotus_prismatic_color
         continuous_color = scene.formamotus_continuous_color
         default_color = scene.formamotus_default_color
         urdf_filepath = scene.formamotus_urdf_filepath
+        use_mesh = scene.formamotus_use_mesh
 
         _cylinder_objects = {}
         _thin_cylinder_objects = []
+        _mesh_objects = defaultdict(list)
+        _coordinates_offset = {}
         _robot_model = None
 
         # Clear the scene
@@ -311,8 +402,6 @@ class RobotVisualizerOperator(bpy.types.Operator):
         bpy.ops.object.select_all(action='SELECT')
         bpy.ops.object.delete()
 
-        # Set up Freestyle and background
-        enable_freestyle(line_thickness=3.0, line_color=(0, 0, 0))
         bpy.context.scene.world.use_nodes = True
         bg_node = bpy.context.scene.world.node_tree.nodes["Background"]
         bg_node.inputs[0].default_value = (1, 1, 1, 1)
@@ -377,6 +466,9 @@ class RobotVisualizerOperator(bpy.types.Operator):
                 mat.node_tree.links.new(emission.outputs["Emission"], output.inputs["Surface"])
                 cylinder.data.materials.append(mat)
 
+                if use_mesh is True:
+                    cylinder.hide_viewport = True
+                    cylinder.hide_render = True
                 # Map the cylinder to the link
                 _cylinder_objects[link] = cylinder
 
@@ -403,6 +495,9 @@ class RobotVisualizerOperator(bpy.types.Operator):
                         thin_cylinder.rotation_mode = 'QUATERNION'
                         thin_cylinder.rotation_quaternion = [1, 0, 0, 0]
 
+                    if use_mesh is True:
+                        thin_cylinder.hide_viewport = True
+                        thin_cylinder.hide_render = True
                     # Use Emission shader for connectors
                     thin_mat = bpy.data.materials.new(name=f"ConnectorMaterial_{org_parent_link.name}_to_{link.name}")
                     thin_mat.use_nodes = True
@@ -421,6 +516,43 @@ class RobotVisualizerOperator(bpy.types.Operator):
                         length,
                     ))
                 org_parent_link = link
+
+            # Load mesh if enabled
+            urdf_link = _robot_model.urdf_robot_model.link_map[link.name]
+            if hasattr(urdf_link, 'visuals') and urdf_link.visuals:
+                for i_visual, visual in enumerate(urdf_link.visuals):
+                    if hasattr(visual.geometry, 'mesh') and visual.geometry.mesh and visual.geometry.mesh.filename:
+                        mesh_filepath = self.resolve_mesh_filepath(urdf_filepath, visual.geometry.mesh.filename)
+                        self.report({'INFO'}, f"{mesh_filepath}")
+                        if os.path.exists(mesh_filepath):
+                            mesh_obj = self.import_mesh(mesh_filepath, link.name, link=link)
+                            if mesh_obj:
+                                # Set position and rotation
+                                link_coords = link.copy_worldcoords()
+                                if link in _coordinates_offset:
+                                    link_coords = link_coords.copy_worldcoords().transform(_coordinates_offset[link].inverse_transformation())
+                                mesh_obj.location = link_coords.worldpos()
+                                mesh_obj.rotation_mode = 'QUATERNION'
+                                mesh_obj.rotation_quaternion = link_coords.quaternion
+
+                                # Assign material (simple gray emission for now)
+                                name = f"MeshMaterial_{link.name}_{i_visual!s}"
+                                mesh_mat = bpy.data.materials.new(name=name)
+                                mesh_mat.use_nodes = True
+                                mesh_nodes = mesh_mat.node_tree.nodes
+                                mesh_nodes.clear()
+                                mesh_emission = mesh_nodes.new("ShaderNodeEmission")
+                                mesh_output = mesh_nodes.new("ShaderNodeOutputMaterial")
+                                mesh_emission.inputs["Color"].default_value = (0.5, 0.5, 0.5, 1.0)  # Gray
+                                mesh_emission.inputs["Strength"].default_value = 1.0
+                                mesh_mat.node_tree.links.new(mesh_emission.outputs["Emission"], mesh_output.inputs["Surface"])
+                                mesh_obj.data.materials.append(mesh_mat)
+                                if use_mesh is False:
+                                    mesh_obj.hide_viewport = True
+                                    mesh_obj.hide_render = True
+                                _mesh_objects[link].append(mesh_obj)
+                        else:
+                            self.report({'WARNING'}, f"Mesh file not found: {mesh_filepath}")
             for child_link in link.child_links:
                 links.append((child_link, org_parent_link, parent_coords.copy_worldcoords()))
 
@@ -495,6 +627,12 @@ class RobotRenderOperator(bpy.types.Operator):
     def render_scene(self, context, render_filepath):
         """Render the scene and save the output to the specified filepath."""
         global _cylinder_objects
+        global _mesh_objects
+        # Set up Freestyle and background
+        if bpy.types.Scene.formamotus_use_mesh is False and not _mesh_objects:
+            enable_freestyle(line_thickness=3.0, line_color=(0, 0, 0))
+        else:
+            bpy.context.scene.render.use_freestyle = False
         # Calculate the bounding box of the robot
         min_coords = np.array([float('inf')] * 3)
         max_coords = np.array([-float('inf')] * 3)
@@ -505,6 +643,7 @@ class RobotRenderOperator(bpy.types.Operator):
         center = (min_coords + max_coords) / 2
         size = np.max(max_coords - min_coords)
         self.setup_camera_and_light(context, center, size)
+        bpy.context.scene.render.film_transparent = True
         bpy.context.scene.render.image_settings.file_format = 'PNG'
         bpy.context.scene.render.filepath = render_filepath
         bpy.ops.render.render(write_still=True)
@@ -517,11 +656,40 @@ class RobotRenderOperator(bpy.types.Operator):
         self.render_scene(context, render_filepath)
         return {'FINISHED'}
 
+def update_visibility(self, context):
+    global _cylinder_objects
+    global _mesh_objects
+    global _thin_cylinder_objects
+    scene = context.scene
+    use_mesh = scene.formamotus_use_mesh
+    if use_mesh:
+        for cylinder in _cylinder_objects.values():
+            cylinder.hide_viewport = True
+            cylinder.hide_render = True
+        for _, _, cylinder, _ in _thin_cylinder_objects:
+            cylinder.hide_viewport = True
+            cylinder.hide_render = True
+        for _, mesh_objs in _mesh_objects.items():
+            for mesh_obj in mesh_objs:
+                mesh_obj.hide_viewport = False
+                mesh_obj.hide_render = False
+    else:
+        for cylinder in _cylinder_objects.values():
+            cylinder.hide_viewport = False
+            cylinder.hide_render = False
+        for _, _, cylinder, _ in _thin_cylinder_objects:
+            cylinder.hide_viewport = False
+            cylinder.hide_render = False
+        for _, mesh_objs in _mesh_objects.items():
+            for mesh_obj in mesh_objs:
+                mesh_obj.hide_viewport = True
+                mesh_obj.hide_render = True
+    bpy.context.view_layer.update()
+
 def register():
     register_custom_properties()
     bpy.utils.register_class(RobotVisualizerOperator)
     bpy.utils.register_class(RobotRenderOperator)
-
 
 def unregister():
     unregister_custom_properties()
