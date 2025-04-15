@@ -7,6 +7,7 @@ import bpy
 from mathutils import Matrix
 from mathutils import Vector
 import numpy as np
+from skrobot.coordinates import Coordinates
 from skrobot.data import fetch_urdfpath
 from skrobot.model import RobotModel
 from skrobot.utils.urdf import no_mesh_load_mode
@@ -119,7 +120,7 @@ def update_joint_position(self, context):
     for link, mesh_objs in _mesh_objects.items():
         link_coords = link.copy_worldcoords()
         if link in _coordinates_offset:
-            link_coords = link_coords.copy_worldcoords().transform(_coordinates_offset[link].inverse_transformation())
+            link_coords = link_coords.copy_worldcoords().transform(_coordinates_offset[link])
         for mesh_obj in mesh_objs:
             mesh_obj.location = link_coords.worldpos()
             mesh_obj.rotation_mode = 'QUATERNION'
@@ -318,7 +319,7 @@ class RobotVisualizerOperator(bpy.types.Operator):
                     self.report({'INFO'}, f"Failed to add property {prop_name}: {e}")
                     raise
 
-    def import_mesh(self, mesh_filepath, link_name, link=None):
+    def import_mesh(self, mesh_filepath, link_name):
         global _coordinates_offset
         ext = os.path.splitext(mesh_filepath)[1].lower()
         try:
@@ -362,9 +363,6 @@ class RobotVisualizerOperator(bpy.types.Operator):
                 self.report({'WARNING'}, f"Failed to import mesh: {mesh_filepath}")
                 return None
 
-            if ext == '.dae':
-                if link is not None:
-                    _coordinates_offset[link] = link.copy_worldcoords()
             mesh_obj = imported_objects[0]
             mesh_obj.name = f"Mesh_{link_name}"
             return mesh_obj
@@ -525,12 +523,14 @@ class RobotVisualizerOperator(bpy.types.Operator):
                         mesh_filepath = self.resolve_mesh_filepath(urdf_filepath, visual.geometry.mesh.filename)
                         self.report({'INFO'}, f"{mesh_filepath}")
                         if os.path.exists(mesh_filepath):
-                            mesh_obj = self.import_mesh(mesh_filepath, link.name, link=link)
+                            mesh_obj = self.import_mesh(mesh_filepath, link.name)
+                            if hasattr(visual, 'origin'):
+                                _coordinates_offset[link] = Coordinates(visual.origin)
                             if mesh_obj:
                                 # Set position and rotation
                                 link_coords = link.copy_worldcoords()
                                 if link in _coordinates_offset:
-                                    link_coords = link_coords.copy_worldcoords().transform(_coordinates_offset[link].inverse_transformation())
+                                    link_coords = link_coords.copy_worldcoords().transform(_coordinates_offset[link])
                                 mesh_obj.location = link_coords.worldpos()
                                 mesh_obj.rotation_mode = 'QUATERNION'
                                 mesh_obj.rotation_quaternion = link_coords.quaternion
