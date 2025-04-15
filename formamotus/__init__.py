@@ -65,14 +65,14 @@ try:
 except ImportError:
     pass
 
-version = '1.0.0'
+version = '1.1.0'
 repository = 'https://github.com/iory/formamotus'
 
 bl_info = {
     "name": "FormaMotus",
     "description": "Visualize robot kinematics structures in Blender.",
     "author": "Iori Yanokura",
-    "version": (1, 0, 0),
+    "version": (1, 1, 0),
     "blender": (3, 0, 0),
     "location": "View3D > Sidebar > FormaMotus",
     "warning": "",
