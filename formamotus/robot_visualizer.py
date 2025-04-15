@@ -7,7 +7,7 @@ import bpy
 from mathutils import Matrix
 from mathutils import Vector
 import numpy as np
-from skrobot.data import pr2_urdfpath
+from skrobot.data import fetch_urdfpath
 from skrobot.model import RobotModel
 from skrobot.utils.urdf import no_mesh_load_mode
 from skrobot.utils.urdf import resolve_filepath
@@ -133,7 +133,7 @@ def register_custom_properties():
     bpy.types.Scene.formamotus_urdf_filepath = bpy.props.StringProperty(
         name="URDF Filepath",
         description="Path to load URDF filepath",
-        default=str(pr2_urdfpath()),
+        default=str(fetch_urdfpath()),
         subtype='FILE_PATH'
     )
 
