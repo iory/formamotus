@@ -1,6 +1,7 @@
 from collections import defaultdict
 import os
 import re  # Added for cleaning property names
+import tempfile
 from typing import ClassVar
 
 import bpy
@@ -138,10 +139,12 @@ def register_custom_properties():
         subtype='FILE_PATH'
     )
 
+    temp_dir = tempfile.gettempdir()
+    temp_file_path = os.path.join(temp_dir, "render_output.png")
     bpy.types.Scene.formamotus_render_filepath = bpy.props.StringProperty(
         name="Render Filepath",
         description="Path to save the rendered image",
-        default="/tmp/render_output.png",
+        default=temp_file_path,
         subtype='FILE_PATH'
     )
 
