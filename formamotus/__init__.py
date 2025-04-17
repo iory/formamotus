@@ -1,4 +1,5 @@
 import os
+from pathlib import Path
 import subprocess
 import sys
 
@@ -92,7 +93,11 @@ installation_finished_message = "All FormaMotus requirements have been installed
 
 def install_requirement(package_name, upgrade_pip=False, lib=None, ensure_pip=True):
     if lib is None and BPY_AVAILABLE:
-        lib = bpy.utils.user_resource("SCRIPTS", path="modules")
+        lib = Path(bpy.utils.user_resource("SCRIPTS", path="modules"))
+
+    if lib is not None:
+        lib.mkdir(parents=True, exist_ok=True)
+
     if ensure_pip:
         try:
             subprocess.check_call([sys.executable, "-m", "ensurepip", "--user"])
