@@ -632,7 +632,8 @@ class RobotRenderOperator(bpy.types.Operator):
         global _cylinder_objects
         global _mesh_objects
         # Set up Freestyle and background
-        if bpy.types.Scene.formamotus_use_mesh is False and not _mesh_objects:
+        use_mesh = context.scene.formamotus_use_mesh
+        if use_mesh is False:
             enable_freestyle(line_thickness=3.0, line_color=(0, 0, 0))
         else:
             bpy.context.scene.render.use_freestyle = False
