@@ -322,7 +322,7 @@ class RobotVisualizerOperator(bpy.types.Operator):
                     self.report({'INFO'}, f"Failed to add property {prop_name}: {e}")
                     raise
 
-    def import_mesh(self, mesh_filepath, link_name):
+    def import_mesh(self, mesh_filepath, link_name, color=None):
         global _coordinates_offset
         ext = os.path.splitext(mesh_filepath)[1].lower()
         try:
@@ -368,6 +368,22 @@ class RobotVisualizerOperator(bpy.types.Operator):
 
             mesh_obj = imported_objects[0]
             mesh_obj.name = f"Mesh_{link_name}"
+
+            # Apply color only if specified
+            if color is not None:
+                # Create a new material with the specified color
+                material = bpy.data.materials.new(name=f"Material_{link_name}")
+                material.use_nodes = True
+                principled_bsdf = material.node_tree.nodes.get("Principled BSDF")
+                if principled_bsdf:
+                    principled_bsdf.inputs["Base Color"].default_value = color
+
+                # Assign the material to the mesh
+                if mesh_obj.data.materials:
+                    mesh_obj.data.materials[0] = material
+                else:
+                    mesh_obj.data.materials.append(material)
+
             return mesh_obj
         except Exception as e:
             self.report({'WARNING'}, f"Error importing mesh {mesh_filepath}: {e}")
@@ -526,7 +542,10 @@ class RobotVisualizerOperator(bpy.types.Operator):
                         mesh_filepath = self.resolve_mesh_filepath(urdf_filepath, visual.geometry.mesh.filename)
                         self.report({'INFO'}, f"{mesh_filepath}")
                         if os.path.exists(mesh_filepath):
-                            mesh_obj = self.import_mesh(mesh_filepath, link.name)
+                            color = None
+                            if hasattr(visual, 'material') and hasattr(visual.material, 'color'):
+                                color = visual.material.color
+                            mesh_obj = self.import_mesh(mesh_filepath, link.name, color=color)
                             if hasattr(visual, 'origin'):
                                 _coordinates_offset[link] = Coordinates(visual.origin)
                             if mesh_obj:
