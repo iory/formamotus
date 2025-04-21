@@ -13,6 +13,8 @@ from skrobot.data import fetch_urdfpath
 from skrobot.model import RobotModel
 from skrobot.utils.urdf import no_mesh_load_mode
 from skrobot.utils.urdf import resolve_filepath
+import trimesh
+from trimesh.units import to_inch
 
 from formamotus.utils.dae import fix_up_axis_and_get_materials
 from formamotus.utils.rendering_utils import enable_freestyle
@@ -325,6 +327,11 @@ class RobotVisualizerOperator(bpy.types.Operator):
     def import_mesh(self, mesh_filepath, link_name, color=None):
         global _coordinates_offset
         ext = os.path.splitext(mesh_filepath)[1].lower()
+        trimesh_obj = trimesh.load(mesh_filepath)
+        if trimesh_obj.units is not None:
+            scale = to_inch(trimesh_obj.units) / to_inch('meters')
+        else:
+            scale = 1.0
         try:
             if ext == '.stl':
                 if "stl_import" in dir(bpy.ops.wm):
@@ -368,6 +375,11 @@ class RobotVisualizerOperator(bpy.types.Operator):
 
             mesh_obj = imported_objects[0]
             mesh_obj.name = f"Mesh_{link_name}"
+            mesh_obj.scale = (scale, scale, scale)
+
+            if scale != 1.0:
+                bpy.context.view_layer.objects.active = mesh_obj
+                bpy.ops.object.transform_apply(location=False, rotation=False, scale=True)
 
             # Apply color only if specified
             if color is not None:
