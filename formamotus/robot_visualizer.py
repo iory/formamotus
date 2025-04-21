@@ -329,9 +329,9 @@ class RobotVisualizerOperator(bpy.types.Operator):
         ext = os.path.splitext(mesh_filepath)[1].lower()
         trimesh_obj = trimesh.load(mesh_filepath)
         if trimesh_obj.units is not None:
-            scale = to_inch(trimesh_obj.units) / to_inch('meters')
+            to_inch(trimesh_obj.units) / to_inch('meters')
         else:
-            scale = 1.0
+            pass
         try:
             if ext == '.stl':
                 if "stl_import" in dir(bpy.ops.wm):
@@ -362,9 +362,6 @@ class RobotVisualizerOperator(bpy.types.Operator):
                 self.report({'WARNING'}, f"Unsupported mesh format: {ext} for {link_name}")
                 return None
 
-            bpy.context.view_layer.objects.active = bpy.context.selected_objects[0]
-            if len(bpy.context.selected_objects) > 1:
-                bpy.ops.object.join()
             if not bpy.context.object.data.uv_layers:
                 bpy.ops.mesh.uv_texture_add()
 
@@ -373,30 +370,26 @@ class RobotVisualizerOperator(bpy.types.Operator):
                 self.report({'WARNING'}, f"Failed to import mesh: {mesh_filepath}")
                 return None
 
-            mesh_obj = imported_objects[0]
-            mesh_obj.name = f"Mesh_{link_name}"
-            mesh_obj.scale = (scale, scale, scale)
+            mesh_obj_list = []
+            for i, mesh_obj in enumerate(bpy.context.selected_objects):
+                mesh_obj.name = f"Mesh_{link_name}_{i}"
 
-            if scale != 1.0:
-                bpy.context.view_layer.objects.active = mesh_obj
-                bpy.ops.object.transform_apply(location=False, rotation=False, scale=True)
+                # Apply color only if specified
+                if color is not None:
+                    # Create a new material with the specified color
+                    material = bpy.data.materials.new(name=f"Material_{link_name}_{i}")
+                    material.use_nodes = True
+                    principled_bsdf = material.node_tree.nodes.get("Principled BSDF")
+                    if principled_bsdf:
+                        principled_bsdf.inputs["Base Color"].default_value = color
 
-            # Apply color only if specified
-            if color is not None:
-                # Create a new material with the specified color
-                material = bpy.data.materials.new(name=f"Material_{link_name}")
-                material.use_nodes = True
-                principled_bsdf = material.node_tree.nodes.get("Principled BSDF")
-                if principled_bsdf:
-                    principled_bsdf.inputs["Base Color"].default_value = color
-
-                # Assign the material to the mesh
-                if mesh_obj.data.materials:
-                    mesh_obj.data.materials[0] = material
-                else:
-                    mesh_obj.data.materials.append(material)
-
-            return mesh_obj
+                    # Assign the material to the mesh
+                    if mesh_obj.data.materials:
+                        mesh_obj.data.materials[0] = material
+                    else:
+                        mesh_obj.data.materials.append(material)
+                mesh_obj_list.append(mesh_obj)
+            return mesh_obj_list
         except Exception as e:
             self.report({'WARNING'}, f"Error importing mesh {mesh_filepath}: {e}")
             return None
@@ -555,12 +548,10 @@ class RobotVisualizerOperator(bpy.types.Operator):
                         self.report({'INFO'}, f"{mesh_filepath}")
                         if os.path.exists(mesh_filepath):
                             color = None
-                            if hasattr(visual, 'material') and hasattr(visual.material, 'color'):
-                                color = visual.material.color
-                            mesh_obj = self.import_mesh(mesh_filepath, link.name, color=color)
+                            mesh_obj_list = self.import_mesh(mesh_filepath, link.name, color=color)
                             if hasattr(visual, 'origin'):
                                 _coordinates_offset[link] = Coordinates(visual.origin)
-                            if mesh_obj:
+                            for i_mesh, mesh_obj in enumerate(mesh_obj_list):
                                 # Set position and rotation
                                 link_coords = link.copy_worldcoords()
                                 if link in _coordinates_offset:
@@ -570,7 +561,7 @@ class RobotVisualizerOperator(bpy.types.Operator):
                                 mesh_obj.rotation_quaternion = link_coords.quaternion
 
                                 # Assign material (simple gray emission for now)
-                                name = f"MeshMaterial_{link.name}_{i_visual!s}"
+                                name = f"MeshMaterial_{link.name}_{i_visual!s}_{i_mesh!s}"
                                 mesh_mat = bpy.data.materials.new(name=name)
                                 mesh_mat.use_nodes = True
                                 mesh_nodes = mesh_mat.node_tree.nodes
@@ -580,7 +571,8 @@ class RobotVisualizerOperator(bpy.types.Operator):
                                 mesh_emission.inputs["Color"].default_value = (0.5, 0.5, 0.5, 1.0)  # Gray
                                 mesh_emission.inputs["Strength"].default_value = 1.0
                                 mesh_mat.node_tree.links.new(mesh_emission.outputs["Emission"], mesh_output.inputs["Surface"])
-                                mesh_obj.data.materials.append(mesh_mat)
+                                if mesh_obj.data:
+                                    mesh_obj.data.materials.append(mesh_mat)
                                 if use_mesh is False:
                                     mesh_obj.hide_viewport = True
                                     mesh_obj.hide_render = True
