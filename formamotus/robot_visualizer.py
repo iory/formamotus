@@ -259,6 +259,9 @@ class RobotVisualizerOperator(bpy.types.Operator):
         # Add a property for each joint
         for joint_name in _robot_model.joint_names:
             joint = _robot_model.__dict__.get(joint_name)
+            mimic = _robot_model.urdf_robot_model.joint_map[joint_name].mimic
+            if mimic is not None:
+                continue
             if joint and joint.type != 'fixed':
                 # Get joint angle limits
                 min_angle = joint.min_angle
