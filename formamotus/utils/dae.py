@@ -120,6 +120,25 @@ def fix_up_axis_and_get_materials(file_path: str, preserve_original_texture_name
                                     effect_dict[effect_id].append(param_name)
                                     sampler2D_dict[param_name] = source.text
 
+            for effect in element:
+                if not effect.tag.endswith("effect"):
+                    continue
+                effect_id = effect.get("id")
+                effect_dict[effect_id] = []
+                profile_common = next(
+                    (n for n in effect if n.tag.endswith("profile_COMMON")), None)
+                if profile_common is None:
+                    continue
+
+                for node in effect.iter():
+                    if node.tag.endswith("float") and node.get("sid") == "transparency":
+                        try:
+                            if float(node.text) == 0.0:
+                                node.text = "1.000000"
+                                modified = True
+                        except Exception:
+                            pass
+
         # Process texture image paths in library_images.
         elif "library_images" in element.tag:
             for image in element.findall("image"):
