@@ -471,7 +471,7 @@ class RobotVisualizerOperator(bpy.types.Operator):
 
                 bpy.ops.mesh.primitive_cylinder_add(radius=radius, depth=height, location=parent_link.worldpos())
                 cylinder = bpy.context.object
-                cylinder.name = f"{link.joint.name}"
+                cylinder.name = f"CylinderLink_{link.joint.name}"
                 cylinder.rotation_mode = 'QUATERNION'
                 cylinder.rotation_quaternion = parent_link.copy_worldcoords().quaternion
 
