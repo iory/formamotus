@@ -1,5 +1,6 @@
 from collections import defaultdict
 import os
+from pathlib import Path
 import re  # Added for cleaning property names
 import tempfile
 from typing import ClassVar
@@ -8,15 +9,13 @@ import bpy
 from mathutils import Matrix
 from mathutils import Vector
 import numpy as np
-from skrobot.coordinates import Coordinates
 from skrobot.data import fetch_urdfpath
 from skrobot.model import RobotModel
 from skrobot.utils.urdf import no_mesh_load_mode
 from skrobot.utils.urdf import resolve_filepath
-import trimesh
-from trimesh.units import to_inch
 
 from formamotus.utils.dae import fix_up_axis_and_get_materials
+from formamotus.utils.dae import zero_origin_dae
 from formamotus.utils.rendering_utils import enable_freestyle
 
 _robot_model = None
@@ -24,7 +23,6 @@ _cylinder_objects = {}
 _thin_cylinder_objects = []
 _mesh_objects = defaultdict(list)
 _coordinates_offset = {}
-
 
 
 def set_robot_model(model):
@@ -327,14 +325,9 @@ class RobotVisualizerOperator(bpy.types.Operator):
                     self.report({'INFO'}, f"Failed to add property {prop_name}: {e}")
                     raise
 
-    def import_mesh(self, mesh_filepath, link_name, color=None):
+    def import_mesh(self, mesh_filepath, link_name, color=None, visual_origin=None):
         global _coordinates_offset
         ext = os.path.splitext(mesh_filepath)[1].lower()
-        trimesh_obj = trimesh.load(mesh_filepath)
-        if trimesh_obj.units is not None:
-            to_inch(trimesh_obj.units) / to_inch('meters')
-        else:
-            pass
         try:
             if ext == '.stl':
                 if "stl_import" in dir(bpy.ops.wm):
@@ -348,8 +341,13 @@ class RobotVisualizerOperator(bpy.types.Operator):
                     self.report({'WARNING'}, "STL import is not supported")
                     return None
             elif ext == '.dae':
-                (file_path, _) = fix_up_axis_and_get_materials(mesh_filepath)
-                bpy.ops.wm.collada_import(filepath=file_path)
+                if visual_origin is not None:
+                    file_path = zero_origin_dae(mesh_filepath, visual_origin)
+                    bpy.ops.wm.collada_import(filepath=file_path)
+                else:
+                    (file_path, _) = fix_up_axis_and_get_materials(mesh_filepath)
+                    bpy.ops.wm.collada_import(filepath=file_path)
+                    Path(file_path).unlink()
             elif ext == '.obj':
                 if "obj_import" in dir(bpy.ops.wm):
                     bpy.ops.wm.obj_import(
@@ -436,6 +434,7 @@ class RobotVisualizerOperator(bpy.types.Operator):
         _robot_model = RobotModel()
         with no_mesh_load_mode():
             _robot_model.load_urdf_file(urdf_filepath)
+        _robot_model.init_pose()
 
         # Add joint angle properties
         self.add_joint_angle_properties(context)
@@ -546,19 +545,20 @@ class RobotVisualizerOperator(bpy.types.Operator):
             urdf_link = _robot_model.urdf_robot_model.link_map[link.name]
             if hasattr(urdf_link, 'visuals') and urdf_link.visuals:
                 for i_visual, visual in enumerate(urdf_link.visuals):
+                    if hasattr(visual, 'origin'):
+                        visual_origin = visual.origin
+                    else:
+                        visual_origin = None
                     if hasattr(visual.geometry, 'mesh') and visual.geometry.mesh and visual.geometry.mesh.filename:
                         mesh_filepath = self.resolve_mesh_filepath(urdf_filepath, visual.geometry.mesh.filename)
                         self.report({'INFO'}, f"{mesh_filepath}")
                         if os.path.exists(mesh_filepath):
                             color = None
-                            mesh_obj_list = self.import_mesh(mesh_filepath, link.name, color=color)
-                            if hasattr(visual, 'origin'):
-                                _coordinates_offset[link] = Coordinates(visual.origin)
+                            mesh_obj_list = self.import_mesh(mesh_filepath, link.name, color=color,
+                                                             visual_origin=visual_origin)
                             for i_mesh, mesh_obj in enumerate(mesh_obj_list):
                                 # Set position and rotation
                                 link_coords = link.copy_worldcoords()
-                                if link in _coordinates_offset:
-                                    link_coords = link_coords.copy_worldcoords().transform(_coordinates_offset[link])
                                 mesh_obj.location = link_coords.worldpos()
                                 mesh_obj.rotation_mode = 'QUATERNION'
                                 mesh_obj.rotation_quaternion = link_coords.quaternion
