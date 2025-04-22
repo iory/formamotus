@@ -20,7 +20,7 @@
 ## Installation
 1. **Download the Repository**
 
-    [Zip Repository](https://github.com/iory/formamotus/releases/download/v1.1.3/formamotus.zip)
+    [Zip Repository](https://github.com/iory/formamotus/releases/download/v1.1.4/formamotus.zip)
 
 2. **Install the Add-on in Blender**
 - Open Blender and navigate to `Edit > Preferences > Add-ons`.
