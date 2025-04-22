@@ -33,6 +33,9 @@ from typing import Dict
 from typing import List
 from xml.etree import ElementTree
 
+from skrobot.utils.urdf import _load_meshes
+from trimesh.exchange import dae
+
 
 def fix_up_axis_and_get_materials(file_path: str, preserve_original_texture_name: bool = False):
     """
@@ -120,6 +123,25 @@ def fix_up_axis_and_get_materials(file_path: str, preserve_original_texture_name
                                     effect_dict[effect_id].append(param_name)
                                     sampler2D_dict[param_name] = source.text
 
+            for effect in element:
+                if not effect.tag.endswith("effect"):
+                    continue
+                effect_id = effect.get("id")
+                effect_dict[effect_id] = []
+                profile_common = next(
+                    (n for n in effect if n.tag.endswith("profile_COMMON")), None)
+                if profile_common is None:
+                    continue
+
+                for node in effect.iter():
+                    if node.tag.endswith("float") and node.get("sid") == "transparency":
+                        try:
+                            if float(node.text) == 0.0:
+                                node.text = "1.000000"
+                                modified = True
+                        except Exception:
+                            pass
+
         # Process texture image paths in library_images.
         elif "library_images" in element.tag:
             for image in element.findall("image"):
@@ -159,3 +181,18 @@ def fix_up_axis_and_get_materials(file_path: str, preserve_original_texture_name
         tmp_file_path = file_path
 
     return tmp_file_path, mat_sampler2D_dict
+
+
+def zero_origin_dae(input_path, transform):
+    mesh_or_scene = _load_meshes(input_path)
+    transformed_meshes = []
+    for m in mesh_or_scene:
+        m.apply_transform(transform)
+        transformed_meshes.append(m)
+    dae_bytes = dae.export_collada(transformed_meshes)
+
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".dae", mode="w", encoding="utf-8") as tmp_file:
+        with open(tmp_file.name, 'wb') as f:
+            f.write(dae_bytes)
+        tmp_file_path = tmp_file.name
+    return tmp_file_path

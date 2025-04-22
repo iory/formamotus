@@ -1,5 +1,6 @@
 from collections import defaultdict
 import os
+from pathlib import Path
 import re  # Added for cleaning property names
 import tempfile
 from typing import ClassVar
@@ -8,13 +9,13 @@ import bpy
 from mathutils import Matrix
 from mathutils import Vector
 import numpy as np
-from skrobot.coordinates import Coordinates
 from skrobot.data import fetch_urdfpath
 from skrobot.model import RobotModel
 from skrobot.utils.urdf import no_mesh_load_mode
 from skrobot.utils.urdf import resolve_filepath
 
 from formamotus.utils.dae import fix_up_axis_and_get_materials
+from formamotus.utils.dae import zero_origin_dae
 from formamotus.utils.rendering_utils import enable_freestyle
 
 _robot_model = None
@@ -22,7 +23,6 @@ _cylinder_objects = {}
 _thin_cylinder_objects = []
 _mesh_objects = defaultdict(list)
 _coordinates_offset = {}
-
 
 
 def set_robot_model(model):
@@ -257,6 +257,9 @@ class RobotVisualizerOperator(bpy.types.Operator):
         # Add a property for each joint
         for joint_name in _robot_model.joint_names:
             joint = _robot_model.__dict__.get(joint_name)
+            mimic = _robot_model.urdf_robot_model.joint_map[joint_name].mimic
+            if mimic is not None:
+                continue
             if joint and joint.type != 'fixed':
                 # Get joint angle limits
                 min_angle = joint.min_angle
@@ -322,7 +325,7 @@ class RobotVisualizerOperator(bpy.types.Operator):
                     self.report({'INFO'}, f"Failed to add property {prop_name}: {e}")
                     raise
 
-    def import_mesh(self, mesh_filepath, link_name, color=None):
+    def import_mesh(self, mesh_filepath, link_name, color=None, visual_origin=None):
         global _coordinates_offset
         ext = os.path.splitext(mesh_filepath)[1].lower()
         try:
@@ -338,8 +341,13 @@ class RobotVisualizerOperator(bpy.types.Operator):
                     self.report({'WARNING'}, "STL import is not supported")
                     return None
             elif ext == '.dae':
-                (file_path, _) = fix_up_axis_and_get_materials(mesh_filepath)
-                bpy.ops.wm.collada_import(filepath=file_path)
+                if visual_origin is not None:
+                    file_path = zero_origin_dae(mesh_filepath, visual_origin)
+                    bpy.ops.wm.collada_import(filepath=file_path)
+                else:
+                    (file_path, _) = fix_up_axis_and_get_materials(mesh_filepath)
+                    bpy.ops.wm.collada_import(filepath=file_path)
+                    Path(file_path).unlink()
             elif ext == '.obj':
                 if "obj_import" in dir(bpy.ops.wm):
                     bpy.ops.wm.obj_import(
@@ -355,9 +363,6 @@ class RobotVisualizerOperator(bpy.types.Operator):
                 self.report({'WARNING'}, f"Unsupported mesh format: {ext} for {link_name}")
                 return None
 
-            bpy.context.view_layer.objects.active = bpy.context.selected_objects[0]
-            if len(bpy.context.selected_objects) > 1:
-                bpy.ops.object.join()
             if not bpy.context.object.data.uv_layers:
                 bpy.ops.mesh.uv_texture_add()
 
@@ -366,25 +371,26 @@ class RobotVisualizerOperator(bpy.types.Operator):
                 self.report({'WARNING'}, f"Failed to import mesh: {mesh_filepath}")
                 return None
 
-            mesh_obj = imported_objects[0]
-            mesh_obj.name = f"Mesh_{link_name}"
+            mesh_obj_list = []
+            for i, mesh_obj in enumerate(bpy.context.selected_objects):
+                mesh_obj.name = f"Mesh_{link_name}_{i}"
 
-            # Apply color only if specified
-            if color is not None:
-                # Create a new material with the specified color
-                material = bpy.data.materials.new(name=f"Material_{link_name}")
-                material.use_nodes = True
-                principled_bsdf = material.node_tree.nodes.get("Principled BSDF")
-                if principled_bsdf:
-                    principled_bsdf.inputs["Base Color"].default_value = color
+                # Apply color only if specified
+                if color is not None:
+                    # Create a new material with the specified color
+                    material = bpy.data.materials.new(name=f"Material_{link_name}_{i}")
+                    material.use_nodes = True
+                    principled_bsdf = material.node_tree.nodes.get("Principled BSDF")
+                    if principled_bsdf:
+                        principled_bsdf.inputs["Base Color"].default_value = color
 
-                # Assign the material to the mesh
-                if mesh_obj.data.materials:
-                    mesh_obj.data.materials[0] = material
-                else:
-                    mesh_obj.data.materials.append(material)
-
-            return mesh_obj
+                    # Assign the material to the mesh
+                    if mesh_obj.data.materials:
+                        mesh_obj.data.materials[0] = material
+                    else:
+                        mesh_obj.data.materials.append(material)
+                mesh_obj_list.append(mesh_obj)
+            return mesh_obj_list
         except Exception as e:
             self.report({'WARNING'}, f"Error importing mesh {mesh_filepath}: {e}")
             return None
@@ -428,6 +434,7 @@ class RobotVisualizerOperator(bpy.types.Operator):
         _robot_model = RobotModel()
         with no_mesh_load_mode():
             _robot_model.load_urdf_file(urdf_filepath)
+        _robot_model.init_pose()
 
         # Add joint angle properties
         self.add_joint_angle_properties(context)
@@ -459,7 +466,7 @@ class RobotVisualizerOperator(bpy.types.Operator):
 
                 bpy.ops.mesh.primitive_cylinder_add(radius=radius, depth=height, location=parent_link.worldpos())
                 cylinder = bpy.context.object
-                cylinder.name = f"{link.joint.name}"
+                cylinder.name = f"CylinderLink_{link.joint.name}"
                 cylinder.rotation_mode = 'QUATERNION'
                 cylinder.rotation_quaternion = parent_link.copy_worldcoords().quaternion
 
@@ -538,27 +545,26 @@ class RobotVisualizerOperator(bpy.types.Operator):
             urdf_link = _robot_model.urdf_robot_model.link_map[link.name]
             if hasattr(urdf_link, 'visuals') and urdf_link.visuals:
                 for i_visual, visual in enumerate(urdf_link.visuals):
+                    if hasattr(visual, 'origin'):
+                        visual_origin = visual.origin
+                    else:
+                        visual_origin = None
                     if hasattr(visual.geometry, 'mesh') and visual.geometry.mesh and visual.geometry.mesh.filename:
                         mesh_filepath = self.resolve_mesh_filepath(urdf_filepath, visual.geometry.mesh.filename)
                         self.report({'INFO'}, f"{mesh_filepath}")
                         if os.path.exists(mesh_filepath):
                             color = None
-                            if hasattr(visual, 'material') and hasattr(visual.material, 'color'):
-                                color = visual.material.color
-                            mesh_obj = self.import_mesh(mesh_filepath, link.name, color=color)
-                            if hasattr(visual, 'origin'):
-                                _coordinates_offset[link] = Coordinates(visual.origin)
-                            if mesh_obj:
+                            mesh_obj_list = self.import_mesh(mesh_filepath, link.name, color=color,
+                                                             visual_origin=visual_origin)
+                            for i_mesh, mesh_obj in enumerate(mesh_obj_list):
                                 # Set position and rotation
                                 link_coords = link.copy_worldcoords()
-                                if link in _coordinates_offset:
-                                    link_coords = link_coords.copy_worldcoords().transform(_coordinates_offset[link])
                                 mesh_obj.location = link_coords.worldpos()
                                 mesh_obj.rotation_mode = 'QUATERNION'
                                 mesh_obj.rotation_quaternion = link_coords.quaternion
 
                                 # Assign material (simple gray emission for now)
-                                name = f"MeshMaterial_{link.name}_{i_visual!s}"
+                                name = f"MeshMaterial_{link.name}_{i_visual!s}_{i_mesh!s}"
                                 mesh_mat = bpy.data.materials.new(name=name)
                                 mesh_mat.use_nodes = True
                                 mesh_nodes = mesh_mat.node_tree.nodes
@@ -568,7 +574,8 @@ class RobotVisualizerOperator(bpy.types.Operator):
                                 mesh_emission.inputs["Color"].default_value = (0.5, 0.5, 0.5, 1.0)  # Gray
                                 mesh_emission.inputs["Strength"].default_value = 1.0
                                 mesh_mat.node_tree.links.new(mesh_emission.outputs["Emission"], mesh_output.inputs["Surface"])
-                                mesh_obj.data.materials.append(mesh_mat)
+                                if mesh_obj.data:
+                                    mesh_obj.data.materials.append(mesh_mat)
                                 if use_mesh is False:
                                     mesh_obj.hide_viewport = True
                                     mesh_obj.hide_render = True
